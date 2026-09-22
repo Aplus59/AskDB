@@ -85,22 +85,27 @@ def databases_in_use(questions: tuple[Question, ...]) -> tuple[str, ...]:
 
 
 QUESTIONS_FILENAME = "mini_dev_sqlite.json"
+# HuggingFace serves the same file shard-named, e.g. mini_dev_sqlite-00000-of-00001.json
+QUESTIONS_GLOB = "mini_dev_sqlite*.json"
 DATABASES_DIRNAME = "dev_databases"
+
+# The databases are not published on HuggingFace, only the questions are.
+DATABASES_URL = "https://drive.google.com/file/d/13VLWIwpw5E3d5DUkMvzw7hvHE67a4XkG/view"
 
 
 def locate_questions(root: Path) -> Path:
     """Find the questions file inside a downloaded dataset.
 
-    The archive has been repackaged more than once, so search rather than
-    assume a fixed depth.
+    The archive has been repackaged more than once and HuggingFace adds shard
+    suffixes to the name, so search rather than assume a fixed layout.
     """
     direct = root / QUESTIONS_FILENAME
     if direct.is_file():
         return direct
 
-    found = sorted(root.rglob(QUESTIONS_FILENAME))
+    found = sorted(root.rglob(QUESTIONS_GLOB))
     if not found:
-        raise DatasetError(f"no {QUESTIONS_FILENAME} found under {root}")
+        raise DatasetError(f"no {QUESTIONS_GLOB} found under {root}")
     return found[0]
 
 
@@ -113,8 +118,9 @@ def locate_databases(root: Path) -> Path:
     found = sorted(path for path in root.rglob(DATABASES_DIRNAME) if path.is_dir())
     if not found:
         raise DatasetError(
-            f"no {DATABASES_DIRNAME} folder under {root}. "
-            "The questions and the databases are distributed separately; "
-            "see the project README for where to get the databases."
+            f"no {DATABASES_DIRNAME} folder under {root}.\n"
+            "The questions and the databases are distributed separately: HuggingFace "
+            f"carries only the questions. Download the databases from {DATABASES_URL} "
+            f"and extract them so that a {DATABASES_DIRNAME} folder sits under {root}."
         )
     return found[0]

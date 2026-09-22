@@ -109,8 +109,25 @@ def test_locates_questions_nested_in_the_archive(tmp_path: Path) -> None:
     assert minidev.locate_questions(tmp_path) == expected
 
 
+def test_locates_shard_named_questions_file(tmp_path: Path) -> None:
+    # HuggingFace serves the file with a shard suffix rather than the plain name.
+    nested = tmp_path / "data"
+    nested.mkdir()
+    expected = nested / "mini_dev_sqlite-00000-of-00001.json"
+    expected.touch()
+    assert minidev.locate_questions(tmp_path) == expected
+
+
+def test_plain_name_wins_over_shard_name(tmp_path: Path) -> None:
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "mini_dev_sqlite-00000-of-00001.json").touch()
+    expected = tmp_path / minidev.QUESTIONS_FILENAME
+    expected.touch()
+    assert minidev.locate_questions(tmp_path) == expected
+
+
 def test_missing_questions_file_is_reported(tmp_path: Path) -> None:
-    with pytest.raises(minidev.DatasetError, match="no mini_dev_sqlite.json"):
+    with pytest.raises(minidev.DatasetError, match=r"no mini_dev_sqlite\*\.json"):
         minidev.locate_questions(tmp_path)
 
 

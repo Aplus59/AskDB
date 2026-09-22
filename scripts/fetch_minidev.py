@@ -24,7 +24,9 @@ def report(root: Path) -> int:
     try:
         databases_root = minidev.locate_databases(root)
     except minidev.DatasetError as error:
-        print(f"databases: MISSING ({error})", file=sys.stderr)
+        print()
+        print("databases: NOT PRESENT")
+        print(error)
         return 1
 
     missing = []
