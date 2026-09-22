@@ -82,3 +82,39 @@ def resolve_database(root: Path, db_id: str) -> Path:
 
 def databases_in_use(questions: tuple[Question, ...]) -> tuple[str, ...]:
     return tuple(sorted({q.db_id for q in questions}))
+
+
+QUESTIONS_FILENAME = "mini_dev_sqlite.json"
+DATABASES_DIRNAME = "dev_databases"
+
+
+def locate_questions(root: Path) -> Path:
+    """Find the questions file inside a downloaded dataset.
+
+    The archive has been repackaged more than once, so search rather than
+    assume a fixed depth.
+    """
+    direct = root / QUESTIONS_FILENAME
+    if direct.is_file():
+        return direct
+
+    found = sorted(root.rglob(QUESTIONS_FILENAME))
+    if not found:
+        raise DatasetError(f"no {QUESTIONS_FILENAME} found under {root}")
+    return found[0]
+
+
+def locate_databases(root: Path) -> Path:
+    """Find the folder holding the per-database SQLite files."""
+    direct = root / DATABASES_DIRNAME
+    if direct.is_dir():
+        return direct
+
+    found = sorted(path for path in root.rglob(DATABASES_DIRNAME) if path.is_dir())
+    if not found:
+        raise DatasetError(
+            f"no {DATABASES_DIRNAME} folder under {root}. "
+            "The questions and the databases are distributed separately; "
+            "see the project README for where to get the databases."
+        )
+    return found[0]

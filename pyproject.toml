@@ -14,6 +14,9 @@ dev = [
     "ruff>=0.7",
     "mypy>=1.13",
 ]
+data = [
+    "huggingface-hub>=0.26",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -32,6 +35,11 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+# Only needed for downloading datasets, so it may legitimately be absent.
+[[tool.mypy.overrides]]
+module = ["huggingface_hub.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

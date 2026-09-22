@@ -93,3 +93,39 @@ def test_falls_back_to_searching_for_any_sqlite_file(tmp_path: Path) -> None:
 def test_missing_database_lists_where_it_looked(tmp_path: Path) -> None:
     with pytest.raises(minidev.DatasetError, match="no SQLite file"):
         minidev.resolve_database(tmp_path, "toxicology")
+
+
+def test_locates_questions_at_the_root(tmp_path: Path) -> None:
+    expected = tmp_path / minidev.QUESTIONS_FILENAME
+    expected.touch()
+    assert minidev.locate_questions(tmp_path) == expected
+
+
+def test_locates_questions_nested_in_the_archive(tmp_path: Path) -> None:
+    nested = tmp_path / "mini_dev_data" / "sqlite"
+    nested.mkdir(parents=True)
+    expected = nested / minidev.QUESTIONS_FILENAME
+    expected.touch()
+    assert minidev.locate_questions(tmp_path) == expected
+
+
+def test_missing_questions_file_is_reported(tmp_path: Path) -> None:
+    with pytest.raises(minidev.DatasetError, match="no mini_dev_sqlite.json"):
+        minidev.locate_questions(tmp_path)
+
+
+def test_locates_databases_folder(tmp_path: Path) -> None:
+    expected = tmp_path / minidev.DATABASES_DIRNAME
+    expected.mkdir()
+    assert minidev.locate_databases(tmp_path) == expected
+
+
+def test_locates_nested_databases_folder(tmp_path: Path) -> None:
+    expected = tmp_path / "mini_dev_data" / minidev.DATABASES_DIRNAME
+    expected.mkdir(parents=True)
+    assert minidev.locate_databases(tmp_path) == expected
+
+
+def test_missing_databases_folder_explains_the_split_distribution(tmp_path: Path) -> None:
+    with pytest.raises(minidev.DatasetError, match="distributed separately"):
+        minidev.locate_databases(tmp_path)
