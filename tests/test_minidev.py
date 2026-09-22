@@ -146,3 +146,45 @@ def test_locates_nested_databases_folder(tmp_path: Path) -> None:
 def test_missing_databases_folder_explains_the_split_distribution(tmp_path: Path) -> None:
     with pytest.raises(minidev.DatasetError, match="distributed separately"):
         minidev.locate_databases(tmp_path)
+
+
+def test_macos_archive_metadata_is_not_mistaken_for_databases(tmp_path: Path) -> None:
+    # Archives zipped on macOS carry a parallel __MACOSX tree. It sorts before
+    # the real folder, so without filtering it wins.
+    junk = tmp_path / "__MACOSX" / "bundle" / minidev.DATABASES_DIRNAME
+    junk.mkdir(parents=True)
+    real = tmp_path / "bundle" / minidev.DATABASES_DIRNAME
+    real.mkdir(parents=True)
+
+    assert minidev.locate_databases(tmp_path) == real
+
+
+def test_appledouble_stub_is_not_mistaken_for_a_database(tmp_path: Path) -> None:
+    folder = tmp_path / "toxicology"
+    folder.mkdir()
+    (folder / "._toxicology.sqlite").touch()
+    real = folder / "sqlite" / "toxicology.sqlite"
+    real.parent.mkdir()
+    real.touch()
+
+    assert minidev.resolve_database(tmp_path, "toxicology") == real
+
+
+def test_appledouble_stub_alone_is_not_accepted(tmp_path: Path) -> None:
+    folder = tmp_path / "toxicology"
+    folder.mkdir()
+    (folder / "._toxicology.sqlite").touch()
+
+    with pytest.raises(minidev.DatasetError, match="no SQLite file"):
+        minidev.resolve_database(tmp_path, "toxicology")
+
+
+def test_questions_file_inside_macos_metadata_is_ignored(tmp_path: Path) -> None:
+    junk = tmp_path / "__MACOSX" / "data"
+    junk.mkdir(parents=True)
+    (junk / "mini_dev_sqlite-00000-of-00001.json").touch()
+    real = tmp_path / "data" / "mini_dev_sqlite-00000-of-00001.json"
+    real.parent.mkdir()
+    real.touch()
+
+    assert minidev.locate_questions(tmp_path) == real

@@ -56,6 +56,17 @@ def _parse(entry: dict[str, object], index: int) -> Question:
     )
 
 
+def _is_archive_junk(path: Path) -> bool:
+    """Whether a path is macOS archive metadata rather than real content.
+
+    Zipping on macOS adds a parallel `__MACOSX` tree containing AppleDouble
+    stubs named `._original`. They carry the same extension as the file they
+    describe, so a naive search finds a 176-byte stub instead of a 600 MB
+    database and fails much later with a confusing error.
+    """
+    return "__MACOSX" in path.parts or path.name.startswith("._")
+
+
 def resolve_database(root: Path, db_id: str) -> Path:
     """Find the SQLite file for a database id.
 
@@ -66,11 +77,13 @@ def resolve_database(root: Path, db_id: str) -> Path:
     folder = root / db_id
     candidates = [folder / f"{db_id}.sqlite", folder / "sqlite" / f"{db_id}.sqlite"]
     for candidate in candidates:
-        if candidate.is_file():
+        if candidate.is_file() and not _is_archive_junk(candidate):
             return candidate
 
     if folder.is_dir():
-        found = sorted(folder.rglob("*.sqlite"))
+        found = sorted(
+            path for path in folder.rglob("*.sqlite") if not _is_archive_junk(path)
+        )
         if found:
             return found[0]
 
@@ -103,7 +116,7 @@ def locate_questions(root: Path) -> Path:
     if direct.is_file():
         return direct
 
-    found = sorted(root.rglob(QUESTIONS_GLOB))
+    found = sorted(path for path in root.rglob(QUESTIONS_GLOB) if not _is_archive_junk(path))
     if not found:
         raise DatasetError(f"no {QUESTIONS_GLOB} found under {root}")
     return found[0]
@@ -115,7 +128,11 @@ def locate_databases(root: Path) -> Path:
     if direct.is_dir():
         return direct
 
-    found = sorted(path for path in root.rglob(DATABASES_DIRNAME) if path.is_dir())
+    found = sorted(
+        path
+        for path in root.rglob(DATABASES_DIRNAME)
+        if path.is_dir() and not _is_archive_junk(path)
+    )
     if not found:
         raise DatasetError(
             f"no {DATABASES_DIRNAME} folder under {root}.\n"

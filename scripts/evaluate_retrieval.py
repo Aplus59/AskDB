@@ -75,11 +75,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="only score the first N questions")
     parser.add_argument("--k", type=int, nargs="+", default=[1, 3, 5, 10])
     parser.add_argument(
-        "--with-evidence",
+        "--no-evidence",
         action="store_true",
-        help="append BIRD's evidence field to the retrieval query",
+        help="exclude BIRD's evidence field, which is included by default "
+        "because it is worth 18 points of recall@3",
     )
     args = parser.parse_args(argv)
+    use_evidence = not args.no_evidence
 
     try:
         questions_path = minidev.locate_questions(args.data)
@@ -93,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.limit is not None:
         questions = questions[: args.limit]
 
-    outcomes, per_database = collect_outcomes(questions, databases_root, args.with_evidence)
+    outcomes, per_database = collect_outcomes(questions, databases_root, use_evidence)
     if not outcomes:
         print("no questions could be scored", file=sys.stderr)
         return 1
@@ -101,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     report = retrieval.evaluate(outcomes, k_values=args.k)
 
     print()
-    print(f"BM25 schema retrieval{' + evidence' if args.with_evidence else ''}")
+    print(f"BM25 schema retrieval{' + evidence' if use_evidence else ''}")
     print(report.summary())
     print()
 
