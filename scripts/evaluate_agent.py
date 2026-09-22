@@ -41,6 +41,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-repairs", type=int, default=2)
     parser.add_argument("--schema-tables", type=int, default=5)
     parser.add_argument(
+        "--no-value-grounding",
+        action="store_true",
+        help="omit example values from the schema shown to the model",
+    )
+    parser.add_argument(
         "--fresh", action="store_true", help="ignore previous results in the output file"
     )
     parser.add_argument(
@@ -95,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             max_repairs=args.max_repairs,
             schema_tables=args.schema_tables,
+            ground_values=not args.no_value_grounding,
         )
 
         for question in group:

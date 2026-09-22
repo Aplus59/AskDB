@@ -143,6 +143,21 @@ def test_execution_steps_carry_no_token_cost(toolbox: Toolbox) -> None:
     assert execute.usage.total_tokens == 0
 
 
+def test_example_values_reach_the_prompt_by_default(toolbox: Toolbox) -> None:
+    model = ScriptedModel("SELECT name FROM artist")
+    Agent(toolbox, model).answer("which country is the musician from")
+
+    assert "e.g." in model.prompts[0]
+
+
+def test_value_grounding_can_be_turned_off_for_comparison(toolbox: Toolbox) -> None:
+    model = ScriptedModel("SELECT name FROM artist")
+    Agent(toolbox, model, ground_values=False).answer("which country")
+
+    assert "e.g." not in model.prompts[0]
+    assert "CREATE TABLE artist" in model.prompts[0]
+
+
 def test_tables_shown_are_reported(toolbox: Toolbox) -> None:
     model = ScriptedModel("SELECT name FROM artist")
     result = Agent(toolbox, model, schema_tables=1).answer("which country")

@@ -151,6 +151,60 @@ def test_a_write_is_rejected_by_the_connection(toolbox: Toolbox) -> None:
     assert not result.ok
 
 
+def test_schema_context_shows_example_values(toolbox: Toolbox) -> None:
+    # The measured failure this exists for: the model filtered on
+    # 'East Bohemia' while the column stored 'east Bohemia'.
+    context = toolbox.schema_context(["artist"])
+
+    assert "CREATE TABLE artist" in context
+    assert "e.g." in context
+    assert "'US'" in context or "'ML'" in context
+
+
+def test_schema_context_omits_tables_not_asked_for(toolbox: Toolbox) -> None:
+    context = toolbox.schema_context(["artist"])
+    assert "CREATE TABLE track" not in context
+
+
+def test_schema_context_keeps_foreign_keys(toolbox: Toolbox) -> None:
+    context = toolbox.schema_context(["album"])
+    assert "FOREIGN KEY (artist_id) REFERENCES artist(artist_id)" in context
+
+
+def test_schema_context_reports_row_counts(toolbox: Toolbox) -> None:
+    assert "-- 3 rows" in toolbox.schema_context(["artist"])
+
+
+def test_numeric_columns_get_no_examples(toolbox: Toolbox) -> None:
+    # A filter on a number is written from the question; showing values only
+    # spends tokens.
+    context = toolbox.schema_context(["album"])
+    released = next(line for line in context.splitlines() if "released" in line)
+    assert "e.g." not in released
+
+
+def test_examples_can_be_switched_off(toolbox: Toolbox) -> None:
+    assert "e.g." not in toolbox.schema_context(["artist"], samples_per_column=0)
+
+
+def test_schema_context_is_cached(toolbox: Toolbox) -> None:
+    # Re-sampling per question would mean thousands of scans over tables that
+    # reach hundreds of megabytes.
+    first = toolbox.schema_context(["artist"])
+    toolbox.database = Path("deliberately-invalid")
+    assert toolbox.schema_context(["artist"]) == first
+
+
+def test_text_column_detection() -> None:
+    from askdb.agent.tools import is_text_column
+
+    assert is_text_column("TEXT")
+    assert is_text_column("VARCHAR(20)")
+    assert is_text_column("")
+    assert not is_text_column("INTEGER")
+    assert not is_text_column("REAL")
+
+
 def test_long_cells_are_shortened(sample_db: Path) -> None:
     box = Toolbox(sample_db, catalog.load(sample_db))
     result = box.execute_sql("SELECT '" + "x" * 200 + "' AS wide")

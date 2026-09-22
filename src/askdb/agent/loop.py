@@ -71,12 +71,14 @@ class Agent:
         model: str | None = None,
         max_repairs: int = DEFAULT_MAX_REPAIRS,
         schema_tables: int = DEFAULT_SCHEMA_TABLES,
+        ground_values: bool = True,
     ) -> None:
         self.toolbox = toolbox
         self.client = client
         self.model = model
         self.max_repairs = max_repairs
         self.schema_tables = schema_tables
+        self.ground_values = ground_values
         self._index = lexical.BM25(documents.describe_catalog(toolbox.catalog))
 
     def select_tables(self, question: str, evidence: str = "") -> tuple[str, ...]:
@@ -96,7 +98,11 @@ class Agent:
 
     def answer(self, question: str, evidence: str = "") -> AgentResult:
         tables = self.select_tables(question, evidence)
-        schema = self.toolbox.catalog.to_ddl(tables=list(tables))
+        schema = (
+            self.toolbox.schema_context(tables)
+            if self.ground_values
+            else self.toolbox.catalog.to_ddl(tables=list(tables))
+        )
 
         steps: list[Step] = []
         prompt = draft_prompt(schema, question, evidence)

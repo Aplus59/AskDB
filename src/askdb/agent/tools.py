@@ -14,6 +14,7 @@ Two rules hold across all of them:
   recovering from its own mistakes is the loop's whole job.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,17 @@ from askdb.retrieval.documents import tokenize
 DEFAULT_MAX_ROWS = 50
 DEFAULT_COLUMN_MATCHES = 12
 MAX_CELL_WIDTH = 60
+
+# Only text columns get example values. A filter on a number or a date is
+# written from the question; a filter on a category has to match how the value
+# is actually spelled, and that is not guessable from a column name.
+TEXT_TYPE_MARKERS = ("CHAR", "TEXT", "CLOB", "STRING")
+MAX_SAMPLE_WIDTH = 32
+
+
+def is_text_column(column_type: str) -> bool:
+    upper = column_type.upper()
+    return not upper or any(marker in upper for marker in TEXT_TYPE_MARKERS)
 
 
 def _truncate(value: Any) -> str:
@@ -170,6 +182,65 @@ class Toolbox:
         self.database = database
         self.catalog = catalog
         self.max_rows = max_rows
+        self._context_cache: dict[tuple[tuple[str, ...], int], str] = {}
+
+    def schema_context(
+        self, tables: Sequence[str], *, samples_per_column: int = 3
+    ) -> str:
+        """The schema as shown to the model, with example values inline.
+
+        A model that cannot see the data writes `WHERE region = 'East Bohemia'`
+        against a column storing `east Bohemia`, and gets zero rows with no
+        error to recover from. Showing a few real values costs no model call
+        and removes that entire failure mode.
+
+        Cached per table set: every question against a database would otherwise
+        re-sample the same columns, and some of these tables are hundreds of
+        megabytes.
+        """
+        key = (tuple(tables), samples_per_column)
+        if key in self._context_cache:
+            return self._context_cache[key]
+
+        wanted = [name.lower() for name in tables]
+        blocks = []
+        with read_only(self.database) as conn:
+            for table in self.catalog.tables:
+                if table.name.lower() not in wanted:
+                    continue
+                blocks.append(self._render_table(conn, table, samples_per_column))
+
+        rendered = "\n\n".join(blocks)
+        self._context_cache[key] = rendered
+        return rendered
+
+    def _render_table(self, conn: Any, table: Table, samples_per_column: int) -> str:
+        lines = []
+        for column in table.columns:
+            line = f"  {column.name} {column.type}"
+            if column.primary_key:
+                line += " PRIMARY KEY"
+
+            if samples_per_column and is_text_column(column.type):
+                try:
+                    values = sample_values(
+                        conn, table.name, column.name, limit=samples_per_column
+                    )
+                except Exception:  # noqa: BLE001 - examples are optional
+                    values = ()
+                usable = [v for v in values if v and len(v) <= MAX_SAMPLE_WIDTH]
+                if usable:
+                    line += "  -- e.g. " + ", ".join(repr(v) for v in usable)
+            lines.append(line)
+
+        for foreign_key in table.foreign_keys:
+            lines.append(
+                f"  FOREIGN KEY ({foreign_key.column}) REFERENCES "
+                f"{foreign_key.references_table}({foreign_key.references_column})"
+            )
+
+        body = "\n".join(lines)
+        return f"CREATE TABLE {table.name} (\n{body}\n);  -- {table.row_count} rows"
 
     def list_tables(self) -> TableList:
         return TableList(
