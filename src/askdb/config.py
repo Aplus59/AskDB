@@ -21,11 +21,13 @@ class Settings(BaseSettings):
     # "-latest" aliases: an alias can change under you between runs, which
     # would silently move a published baseline with no change to the code.
     #
-    # The `-lite` variants would be the natural cheap rung, but on the free
-    # tier they return 503 far more often than they serve. Availability is
-    # itself a production constraint, so the defaults are models that answer.
+    # Free-tier capacity fluctuates minute to minute, and the `-lite` variants
+    # swing hardest: unavailable for stretches, then answering in under a
+    # second while the full model takes twenty. Since FallbackClient degrades
+    # past an unavailable model, lite belongs first — it is both the cheap rung
+    # and the fast one whenever it has capacity.
     # Override with ASKDB_MODEL_SMALL / ASKDB_MODEL_LARGE in .env.
-    model_small: str = "gemini-3.5-flash"
+    model_small: str = "gemini-3.5-flash-lite"
     model_large: str = "gemini-3.6-flash"
 
     request_timeout_seconds: float = 60.0

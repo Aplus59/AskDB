@@ -32,3 +32,8 @@ class Completion:
     latency_ms: float = 0.0
     cached: bool = False
     attempts: int = 1
+
+    # True when the preferred model was unavailable and a fallback answered.
+    # Callers can still use the result, but it should not be counted as a
+    # measurement of the model that was asked for.
+    degraded: bool = False

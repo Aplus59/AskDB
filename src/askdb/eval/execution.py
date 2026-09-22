@@ -38,6 +38,8 @@ class ExecutionResult:
     error: str | None
     duration_ms: float
     timed_out: bool = False
+    columns: tuple[str, ...] = ()
+    truncated: bool = False
 
     @property
     def ok(self) -> bool:
@@ -78,14 +80,35 @@ def _install_timeout(conn: sqlite3.Connection, seconds: float) -> None:
 
 
 def run(
-    database: Path, sql: str, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    database: Path,
+    sql: str,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_rows: int | None = None,
 ) -> ExecutionResult:
-    """Execute a query and capture rows, or the error it produced."""
+    """Execute a query and capture rows, or the error it produced.
+
+    `max_rows` bounds what is returned, for callers showing a result to a
+    model rather than scoring it. Scoring must never pass it: a truncated
+    result compares unequal to a complete one, so `compare_rows` refuses
+    truncated input rather than reporting a wrong answer.
+    """
     started = time.perf_counter()
     try:
         with read_only(database) as conn:
             _install_timeout(conn, timeout_seconds)
-            rows = tuple(tuple(row) for row in conn.execute(sql).fetchall())
+            cursor = conn.execute(sql)
+            columns = tuple(column[0] for column in cursor.description or ())
+
+            if max_rows is None:
+                fetched = cursor.fetchall()
+                truncated = False
+            else:
+                # One extra row reveals whether more were waiting.
+                fetched = cursor.fetchmany(max_rows + 1)
+                truncated = len(fetched) > max_rows
+                fetched = fetched[:max_rows]
+
+            rows = tuple(tuple(row) for row in fetched)
     except sqlite3.Error as exc:
         elapsed = (time.perf_counter() - started) * 1000
         message = str(exc)
@@ -99,7 +122,11 @@ def run(
         )
 
     return ExecutionResult(
-        rows=rows, error=None, duration_ms=(time.perf_counter() - started) * 1000
+        rows=rows,
+        error=None,
+        duration_ms=(time.perf_counter() - started) * 1000,
+        columns=columns,
+        truncated=truncated,
     )
 
 
@@ -131,6 +158,9 @@ def score(
     """Run both queries against the same database and compare their rows."""
     gold = run(database, gold_sql, timeout_seconds)
     predicted = run(database, predicted_sql, timeout_seconds)
+
+    if predicted.truncated or gold.truncated:
+        raise ValueError("cannot score truncated results")
 
     if predicted.rows is None or gold.rows is None:
         return Comparison(match=False, exact_match=False, predicted=predicted, gold=gold)
