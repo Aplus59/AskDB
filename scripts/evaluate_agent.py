@@ -15,7 +15,7 @@ from askdb.config import settings
 from askdb.data import minidev
 from askdb.data.minidev import Question
 from askdb.db import catalog
-from askdb.eval import run
+from askdb.eval import cost, run
 from askdb.llm.factory import build_client
 from askdb.llm.fallback import NoModelAvailable
 
@@ -68,6 +68,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--fresh", action="store_true", help="ignore previous results in the output file"
+    )
+    parser.add_argument(
+        "--assume-model",
+        default=None,
+        help="price questions that did not record which model answered, "
+        "for runs made before that was recorded",
     )
     parser.add_argument(
         "--summary-only", action="store_true", help="summarise the output file without running"
@@ -163,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"answered {answered} this run; {len(done)} total in {args.output}")
     print()
     print(run.summarize(list(done.values())).render())
+    print()
+    print(cost.estimate(list(done.values()), args.assume_model).render())
     return 0
 
 

@@ -44,6 +44,7 @@ class QuestionResult:
     unresolved_concern: bool = False
     coverage: float = 1.0
     agreement: float | None = None
+    model: str | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -102,6 +103,9 @@ def run_question(agent: Agent, question: Question, database: Path) -> QuestionRe
         unresolved_concern=bool(result.concerns) and result.rechecks > 0,
         coverage=result.verdict.coverage if result.verdict else 1.0,
         agreement=result.agreement,
+        model=next(
+            (step.model for step in result.steps if step.model), None
+        ),
     )
 
 
