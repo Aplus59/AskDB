@@ -13,36 +13,52 @@ motivated by measured failures rather than intuition:
 
 ## Result
 
-Paired comparison over the 57 questions both configurations answered:
+Paired comparison over the 108 questions both configurations answered:
 
 | | Baseline | Grounding + self-check |
 |---|---:|---:|
-| Correct | 35 / 57 | 35 / 57 |
-| Execution accuracy | 0.614 | 0.614 |
-| Tokens per question | 943 | **1667** |
+| Correct | 73 / 108 | 76 / 108 |
+| Execution accuracy | 0.676 | 0.704 |
+| Tokens per question | 843 | **1357** (+61%) |
 
-**Identical accuracy at 77% more tokens.** Two questions were fixed by the
-changes and two were broken by them.
+The changes fixed 6 questions and broke 3, for a net gain of three.
 
-An earlier n=22 sample had shown grounding at +4.5 points. That was one
-question moving, and it did not survive a larger sample. The number was noise,
-and reporting it as an improvement would have been wrong.
+## The gain is not distinguishable from chance
 
-## What this can and cannot establish
+Nine questions changed verdict. Under the null hypothesis that the changes do
+nothing, each of those nine is a coin flip, so McNemar's exact test applies:
 
-n=57 with 22 failures. A two-question swing is 3.5 points, so this rules out a
-large effect, not a small one. The honest claim is: *no effect larger than
-roughly ±5 points, at a certain cost of +77% tokens.*
+    6 fixed, 3 broken, two-sided p = 0.51
 
-The self-check fired on 1 of 57 questions. At that rate it cannot move the
-score much in either direction, and this run says nothing useful about whether
-its judgement is good — only that it is rare.
+That is as close to "no evidence" as a result gets. With three regressions,
+twelve fixes would be needed to reach p < 0.05.
+
+So the honest summary is: **+2.8 points that cannot be distinguished from
+noise, against +61% tokens that is certain.** One side of that trade is
+measured and the other is not.
+
+Measured three times now, on progressively larger samples:
+
+| Sample | Apparent gain | Verdict |
+|---|---|---|
+| n=22 | +4.5 points | One question moving |
+| n=57 paired | 0.0 points | Nothing |
+| n=108 paired | +2.8 points | p = 0.51 |
+
+The estimate has swung from +4.5 to 0.0 to +2.8 as the sample grew. That
+instability is itself the finding: at these sample sizes the measurement is
+dominated by which questions happened to be drawn.
+
+The self-check fired on 1 question in 57. At that rate it cannot move the
+score in either direction, and these runs say nothing about whether its
+judgement is good — only that it is rare.
 
 ## Decision
 
-**Value grounding is off by default.** It has a certain cost and no
-demonstrated benefit. The flag remains so the experiment can be re-run on the
-full 500 questions, where a small effect would become visible.
+**Value grounding is off by default.** The cost is certain and the benefit is
+not demonstrated. The flag remains so the experiment can be re-run on all 500
+questions, where an effect of this size would become measurable — roughly five
+times the current sample is needed to resolve a 3-point difference.
 
 **The self-check stays on.** Its cost when it does not fire is a few
 microseconds of Python, and it only spends a model call on results that are

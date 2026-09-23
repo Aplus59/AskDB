@@ -35,7 +35,14 @@ def main(argv: list[str] | None = None) -> int:
         default=settings.data_dir / "runs" / "agent.jsonl",
         help="where per-question results are appended",
     )
-    parser.add_argument("--limit", type=int, default=None, help="answer at most N questions")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="answer at most N questions THIS RUN, spread across databases. "
+        "When resuming, this is N more on top of what the output file already "
+        "holds, not a total.",
+    )
     parser.add_argument("--db", action="append", help="restrict to these databases")
     parser.add_argument("--model", default=None, help="override the model")
     parser.add_argument("--max-repairs", type=int, default=2)
