@@ -10,6 +10,7 @@ def a_result(
     repairs: int = 0,
     unresolved_concern: bool = False,
     coverage: float = 1.0,
+    agreement: float | None = None,
     reason: str | None = None,
 ) -> QuestionResult:
     return QuestionResult(
@@ -29,6 +30,7 @@ def a_result(
         tables_shown=("molecule",),
         unresolved_concern=unresolved_concern,
         coverage=coverage,
+        agreement=agreement,
     )
 
 
@@ -42,21 +44,27 @@ def test_a_query_that_never_ran_is_refused() -> None:
     assert abstention.decide(result, 0.0, 0.0) == confidence.REFUSE
 
 
-def test_repairs_push_below_a_strict_threshold() -> None:
-    result = a_result(1, match=True, repairs=1)
+def test_repairs_do_not_lower_the_decision() -> None:
+    # Measured lift of 0.84x: a repaired query is no likelier to be wrong,
+    # because the database rejected the first attempt and the model fixed it.
+    result = a_result(1, match=True, repairs=2)
+    assert abstention.decide(result, 0.95, 0.3) == confidence.ANSWER
 
-    assert abstention.decide(result, 0.6, 0.3) == confidence.ANSWER
-    assert abstention.decide(result, 0.95, 0.3) == confidence.CLARIFY
+
+def test_low_vocabulary_coverage_does_not_lower_the_decision() -> None:
+    # Measured lift of 1.05x, which is the base rate with noise.
+    result = a_result(1, match=True, coverage=0.0)
+    assert abstention.decide(result, 0.95, 0.3) == confidence.ANSWER
 
 
 def test_an_unresolved_concern_lowers_the_decision() -> None:
     result = a_result(1, match=True, unresolved_concern=True)
-    assert abstention.decide(result, 0.75, 0.3) == confidence.CLARIFY
+    assert abstention.decide(result, 0.7, 0.3) == confidence.CLARIFY
 
 
 def test_enough_doubt_refuses() -> None:
-    result = a_result(1, match=True, unresolved_concern=True, repairs=2, coverage=0.0)
-    assert abstention.decide(result, 0.6, 0.3) == confidence.REFUSE
+    result = a_result(1, match=True, unresolved_concern=True, agreement=0.34)
+    assert abstention.decide(result, 0.7, 0.3) == confidence.REFUSE
 
 
 def test_answering_everything_gives_full_coverage() -> None:
@@ -81,7 +89,7 @@ def test_silent_errors_count_only_answered_and_wrong() -> None:
     # A wrong answer the system declined to give is not a silent error.
     results = [
         a_result(1, match=False),
-        a_result(2, match=False, unresolved_concern=True, repairs=2, coverage=0.0),
+        a_result(2, match=False, unresolved_concern=True, agreement=0.34),
     ]
     point = abstention.evaluate_at(results, 0.6, 0.3)
 
@@ -92,7 +100,7 @@ def test_silent_errors_count_only_answered_and_wrong() -> None:
 def test_abstention_precision_rewards_declining_wrong_answers() -> None:
     results = [
         a_result(1, match=True),
-        a_result(2, match=False, unresolved_concern=True, repairs=2, coverage=0.0),
+        a_result(2, match=False, unresolved_concern=True, agreement=0.34),
     ]
     point = abstention.evaluate_at(results, 0.6, 0.3)
 
@@ -102,7 +110,7 @@ def test_abstention_precision_rewards_declining_wrong_answers() -> None:
 
 def test_abstention_precision_punishes_declining_good_answers() -> None:
     results = [
-        a_result(1, match=True, unresolved_concern=True, repairs=2, coverage=0.0),
+        a_result(1, match=True, unresolved_concern=True, agreement=0.34),
         a_result(2, match=True),
     ]
     point = abstention.evaluate_at(results, 0.6, 0.3)
@@ -115,10 +123,10 @@ def test_accuracy_rises_as_coverage_falls() -> None:
     # The trade the whole exercise is about.
     results = [
         a_result(1, match=True),
-        a_result(2, match=False, repairs=2),
+        a_result(2, match=False, unresolved_concern=True),
     ]
     lenient = abstention.evaluate_at(results, 0.0, 0.0)
-    strict = abstention.evaluate_at(results, 0.95, 0.3)
+    strict = abstention.evaluate_at(results, 0.7, 0.3)
 
     assert lenient.coverage > strict.coverage
     assert strict.accuracy_when_answered > lenient.accuracy_when_answered

@@ -9,15 +9,21 @@ abstention costs no extra model call. That matters: a system that spends a
 call deciding whether to spend a call has doubled its cost before answering
 anything.
 
-Penalties, and why each one:
+Three signals were tried. Measured over 454 answered questions against a base
+error rate of 0.359:
 
-- An unresolved concern. The self-check flagged the result, a recheck was
-  spent, and it still looks wrong. That is the strongest available evidence
-  that the answer is not trustworthy.
-- Repairs. A query that needed correcting was wrong once already.
-- Vocabulary coverage. When the content words of a question find nothing in
-  the schema, the database probably cannot answer it, and the model will
-  produce plausible SQL over the wrong columns rather than say so.
+    unresolved concern   fires on  35   error rate 0.657   lift 1.83x
+    low vocab coverage   fires on 119   error rate 0.378   lift 1.05x
+    needed a repair      fires on  10   error rate 0.300   lift 0.84x
+
+Only the first predicts anything. Vocabulary coverage fires on a quarter of
+all questions and returns the base rate with noise. The repair penalty points
+the wrong way, which is obvious in hindsight: a repair means the database
+rejected the query and the model corrected it under real feedback, so the
+surviving query has been validated in a way the others have not.
+
+Both were removed. What is left is one signal that is precise and rare, which
+is a smaller claim than a smooth curve over three, and a true one.
 """
 
 from dataclasses import dataclass
@@ -28,13 +34,13 @@ ANSWER = "answer"
 CLARIFY = "clarify"
 REFUSE = "refuse"
 
-DEFAULT_CLARIFY_BELOW = 0.6
+# An unresolved concern scores exactly 1.0 - 0.4 = 0.6, so the threshold
+# has to sit above it. At 0.6 the comparison is strict and the only signal
+# that predicts anything would never fire.
+DEFAULT_CLARIFY_BELOW = 0.7
 DEFAULT_REFUSE_BELOW = 0.3
 
 UNRESOLVED_CONCERN_PENALTY = 0.4
-REPAIR_PENALTY = 0.15
-LOW_COVERAGE_PENALTY = 0.3
-COVERAGE_FLOOR = 0.25
 
 # Disagreement between repeated draws is the only continuous input here.
 # The others fire on a few percent of questions, which left the score
@@ -80,7 +86,7 @@ def stem(token: str) -> str:
     the system abstains from questions it can answer perfectly well.
 
     Deliberately crude. A real stemmer would bring a dependency and a lot of
-    behaviour, to improve a heuristic whose output is one input among four.
+    behaviour, and the heuristic it feeds is now recorded rather than scored.
     """
     if len(token) > 4 and token.endswith("ies"):
         return token[:-3] + "y"
@@ -112,7 +118,6 @@ def assess(
     question: str,
     *,
     schema_tokens: set[str],
-    repairs: int = 0,
     unresolved_concern: bool = False,
     query_failed: bool = False,
     agreement: float | None = None,
@@ -141,16 +146,10 @@ def assess(
         score -= UNRESOLVED_CONCERN_PENALTY
         reasons.append("the result still looked wrong after a second attempt")
 
-    if repairs:
-        score -= REPAIR_PENALTY * repairs
-        reasons.append(f"the query needed {repairs} correction(s)")
-
+    # Still computed and recorded, but no longer scored: it turned out not to
+    # predict wrongness. Keeping the measurement makes it cheap to re-test on
+    # a larger run without re-answering anything.
     coverage = vocabulary_coverage(question, schema_tokens)
-    if coverage < COVERAGE_FLOOR:
-        score -= LOW_COVERAGE_PENALTY
-        reasons.append(
-            f"only {coverage:.0%} of the question's terms appear anywhere in the schema"
-        )
 
     score = max(0.0, min(1.0, score))
 

@@ -37,10 +37,6 @@ def decide(
         score -= (1.0 - result.agreement) * confidence.DISAGREEMENT_WEIGHT
     if result.unresolved_concern:
         score -= confidence.UNRESOLVED_CONCERN_PENALTY
-    if result.repairs:
-        score -= confidence.REPAIR_PENALTY * result.repairs
-    if result.coverage < confidence.COVERAGE_FLOOR:
-        score -= confidence.LOW_COVERAGE_PENALTY
     score = max(0.0, min(1.0, score))
 
     if score < refuse_below:

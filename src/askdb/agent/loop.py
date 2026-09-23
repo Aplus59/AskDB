@@ -277,7 +277,6 @@ class Agent:
             verdict = confidence.assess(
                 question,
                 schema_tokens=self._vocabulary(tables),
-                repairs=sum(1 for step in steps if step.kind == "repair"),
                 unresolved_concern=best_concern is not None,
                 query_failed=final_output is None or not final_output.ok,
                 agreement=agreement,

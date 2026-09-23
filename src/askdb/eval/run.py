@@ -155,6 +155,7 @@ class Summary:
     avg_model_calls: float
     failures: dict[str, int]
     by_difficulty: dict[str, tuple[int, float]]
+    by_database: dict[str, tuple[int, float]]
 
     def render(self) -> str:
         lines = [
@@ -177,6 +178,15 @@ class Summary:
             lines.append("by difficulty:")
             for name, (count, accuracy) in sorted(self.by_difficulty.items()):
                 lines.append(f"  {name:<10} {accuracy:.3f}  (n={count})")
+        if self.by_database:
+            lines.append("")
+            lines.append("by database:")
+            width = max(len(name) for name in self.by_database)
+            # Worst first: an aggregate hides which schema is dragging it down.
+            for name, (count, accuracy) in sorted(
+                self.by_database.items(), key=lambda kv: kv[1][1]
+            ):
+                lines.append(f"  {name:<{width}}  {accuracy:.3f}  (n={count})")
         if self.failures:
             lines.append("")
             lines.append("failures:")
@@ -204,12 +214,20 @@ def summarize(results: Sequence[QuestionResult]) -> Summary:
     ]
     total = len(scorable)
     if total == 0:
-        return Summary(0, unscorable, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, {}, {})
+        return Summary(0, unscorable, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, {}, {}, {})
 
     failures: dict[str, int] = {}
     for result in scorable:
         if not result.match and result.failure_reason:
             failures[result.failure_reason] = failures.get(result.failure_reason, 0) + 1
+
+    by_database: dict[str, tuple[int, float]] = {}
+    for name in {result.db_id for result in scorable}:
+        group = [result for result in scorable if result.db_id == name]
+        by_database[name] = (
+            len(group),
+            _ratio(sum(1 for r in group if r.match), len(group)),
+        )
 
     by_difficulty: dict[str, tuple[int, float]] = {}
     levels = {result.difficulty for result in scorable if result.difficulty}
@@ -232,6 +250,7 @@ def summarize(results: Sequence[QuestionResult]) -> Summary:
         avg_model_calls=sum(r.model_calls for r in scorable) / total,
         failures=failures,
         by_difficulty=by_difficulty,
+        by_database=by_database,
     )
 
 

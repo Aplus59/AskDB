@@ -31,19 +31,20 @@ def test_an_unresolved_concern_lowers_confidence() -> None:
     assert any("still looked wrong" in reason for reason in verdict.reasons)
 
 
-def test_repairs_lower_confidence_in_proportion() -> None:
-    one = assess("which artists are from the country Mali", repairs=1)
-    two = assess("which artists are from the country Mali", repairs=2)
-
-    assert two.confidence < one.confidence < 1.0
-
-
-def test_a_question_about_absent_concepts_loses_confidence() -> None:
-    # Nothing in this schema stores weather.
+def test_vocabulary_coverage_no_longer_affects_confidence() -> None:
+    # Measured over 454 questions it fired on a quarter of them and returned
+    # the base error rate, so it is recorded but not scored.
     verdict = assess("what was the rainfall and humidity during the thunderstorm")
 
-    assert verdict.confidence < 1.0
-    assert any("appear anywhere in the schema" in reason for reason in verdict.reasons)
+    assert verdict.confidence == 1.0
+    assert verdict.reasons == ()
+
+
+def test_vocabulary_coverage_is_still_recorded() -> None:
+    # Kept on the verdict so it can be re-tested against a larger run without
+    # re-answering anything.
+    assert assess("what was the rainfall during the thunderstorm").coverage == 0.0
+    assert assess("list the album title").coverage == 1.0
 
 
 def test_a_well_covered_question_keeps_full_confidence() -> None:
@@ -59,30 +60,30 @@ def test_a_question_with_no_content_words_is_fully_covered() -> None:
     assert confidence.vocabulary_coverage("how many are there", SCHEMA) == 1.0
 
 
-def test_accumulated_doubt_triggers_a_clarification() -> None:
-    verdict = assess(
-        "which artists are from the country Mali", unresolved_concern=True, repairs=1
-    )
+def test_an_unresolved_concern_triggers_a_clarification_by_default() -> None:
+    # The default threshold has to sit above 0.6, or the one signal that
+    # predicts anything would never fire.
+    verdict = assess("which artists are from the country Mali", unresolved_concern=True)
 
     assert verdict.decision == confidence.CLARIFY
-    assert len(verdict.reasons) == 2
 
 
-def test_enough_doubt_triggers_a_refusal() -> None:
+def test_a_concern_plus_disagreement_refuses() -> None:
     verdict = assess(
-        "what was the rainfall during the thunderstorm",
+        "which artists are from the country Mali",
         unresolved_concern=True,
-        repairs=2,
+        agreement=0.34,
     )
 
     assert verdict.decision == confidence.REFUSE
+    assert len(verdict.reasons) == 2
 
 
 def test_confidence_never_goes_below_zero() -> None:
     verdict = assess(
-        "what was the rainfall during the thunderstorm",
+        "which artists are from the country Mali",
         unresolved_concern=True,
-        repairs=99,
+        agreement=0.0,
     )
     assert verdict.confidence == 0.0
 
@@ -91,8 +92,8 @@ def test_thresholds_are_tunable() -> None:
     # The sweep that produces the coverage curve moves exactly these.
     question = "which artists are from the country Mali"
 
-    strict = assess(question, repairs=1, clarify_below=0.95)
-    lenient = assess(question, repairs=1, clarify_below=0.5)
+    strict = assess(question, agreement=0.8, clarify_below=0.95)
+    lenient = assess(question, agreement=0.8, clarify_below=0.5)
 
     assert strict.decision == confidence.CLARIFY
     assert lenient.decision == confidence.ANSWER
