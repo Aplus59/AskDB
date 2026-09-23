@@ -8,7 +8,13 @@ from google.genai import errors
 
 from askdb.llm import retry
 from askdb.llm.cache import ResponseCache
-from askdb.llm.client import GeminiClient, is_transient
+from askdb.llm.client import (
+    GeminiClient,
+    QuotaExhausted,
+    is_daily_quota,
+    is_transient,
+    retry_after_seconds,
+)
 
 INSTANT = retry.RetryPolicy(base_delay=0.0)
 
@@ -47,6 +53,7 @@ def build(models: FakeModels, cache: ResponseCache | None = None) -> GeminiClien
         cache=cache,
         policy=INSTANT,
         default_model="test-model",
+        sleep=lambda _: None,
     )
 
 
@@ -208,3 +215,59 @@ def test_permanent_client_codes(code: int) -> None:
 @pytest.mark.parametrize("code", [500, 503])
 def test_server_errors_are_always_transient(code: int) -> None:
     assert is_transient(errors.ServerError(code, {}))
+
+
+def quota_payload(quota_id: str, retry_delay: str | None = None) -> dict[str, Any]:
+    details: list[dict[str, Any]] = [
+        {
+            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+            "violations": [{"quotaId": quota_id}],
+        }
+    ]
+    if retry_delay is not None:
+        details.append(
+            {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": retry_delay}
+        )
+    return {"error": {"code": 429, "message": "quota", "details": details}}
+
+
+def test_a_daily_quota_is_not_retried() -> None:
+    # A per-minute limit clears in seconds. A daily quota clears at midnight,
+    # so thirty seconds of backoff is thirty seconds wasted.
+    payload = quota_payload("GenerateRequestsPerDayPerProjectPerModel-FreeTier", "35s")
+    models = FakeModels(errors.ClientError(429, payload), FakeResponse("never reached"))
+
+    with pytest.raises(QuotaExhausted) as caught:
+        build(models).complete("hello")
+
+    assert caught.value.model == "test-model"
+    assert len(models.calls) == 1
+
+
+def test_a_per_minute_rate_limit_is_still_retried() -> None:
+    payload = quota_payload("GenerateRequestsPerMinutePerProject-FreeTier", "5s")
+    models = FakeModels(errors.ClientError(429, payload), FakeResponse("recovered"))
+
+    assert build(models).complete("hello").text == "recovered"
+
+
+def test_daily_quota_detection() -> None:
+    daily = errors.ClientError(429, quota_payload("GenerateRequestsPerDayPerModel"))
+    minute = errors.ClientError(429, quota_payload("RequestsPerMinutePerProject"))
+
+    assert is_daily_quota(daily)
+    assert not is_daily_quota(minute)
+    assert not is_daily_quota(errors.ClientError(429, {}))
+
+
+def test_reads_the_servers_retry_hint() -> None:
+    error = errors.ClientError(429, quota_payload("PerMinute", "35.8s"))
+    assert retry_after_seconds(error) == pytest.approx(35.8)
+
+
+def test_a_missing_or_malformed_hint_is_ignored() -> None:
+    assert retry_after_seconds(errors.ClientError(429, quota_payload("PerMinute"))) is None
+    assert (
+        retry_after_seconds(errors.ClientError(429, quota_payload("PerMinute", "soon")))
+        is None
+    )

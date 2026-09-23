@@ -1,6 +1,7 @@
 import pytest
 from google.genai import errors
 
+from askdb.llm.client import QuotaExhausted
 from askdb.llm.fallback import FallbackClient, NoModelAvailable, should_fall_back
 from askdb.llm.retry import RetriesExhausted, TransientError
 from askdb.llm.types import Completion, Usage
@@ -149,3 +150,51 @@ def test_classification_of_errors() -> None:
     assert should_fall_back(errors.ServerError(503, {}))
     assert not should_fall_back(errors.ClientError(400, {}))
     assert not should_fall_back(ValueError("a bug"))
+
+
+def quota(model: str) -> QuotaExhausted:
+    return QuotaExhausted(model, "429 RESOURCE_EXHAUSTED daily quota")
+
+
+def test_quota_on_one_model_falls_back_to_another() -> None:
+    # Quotas are counted per model, so another model may still have room.
+    inner = ScriptedClient({"a": quota("a"), "b": "from b"})
+    assert FallbackClient(inner, ["a", "b"]).complete("q").text == "from b"
+
+
+def test_quota_everywhere_is_reported_as_out_of_quota() -> None:
+    inner = ScriptedClient({"a": quota("a"), "b": quota("b")})
+
+    with pytest.raises(NoModelAvailable) as caught:
+        FallbackClient(inner, ["a", "b"]).complete("q")
+
+    assert caught.value.out_of_quota
+
+
+def test_a_mix_of_quota_and_saturation_is_not_out_of_quota() -> None:
+    # The saturated model may answer the next question. Halting a long run
+    # over one unlucky moment throws away the afternoon.
+    inner = ScriptedClient({"a": exhausted(), "b": quota("b")})
+
+    with pytest.raises(NoModelAvailable) as caught:
+        FallbackClient(inner, ["a", "b"]).complete("q")
+
+    assert not caught.value.out_of_quota
+
+
+def test_plain_saturation_is_not_out_of_quota() -> None:
+    inner = ScriptedClient({"a": exhausted(), "b": exhausted()})
+
+    with pytest.raises(NoModelAvailable) as caught:
+        FallbackClient(inner, ["a", "b"]).complete("q")
+
+    assert not caught.value.out_of_quota
+
+
+def test_every_failure_is_kept_not_just_the_last() -> None:
+    inner = ScriptedClient({"a": quota("a"), "b": exhausted(), "c": quota("c")})
+
+    with pytest.raises(NoModelAvailable) as caught:
+        FallbackClient(inner, ["a", "b", "c"]).complete("q")
+
+    assert len(caught.value.failures) == 3

@@ -15,7 +15,7 @@ from dataclasses import replace
 
 from google.genai import errors
 
-from askdb.llm.client import ModelClient
+from askdb.llm.client import ModelClient, QuotaExhausted
 from askdb.llm.retry import RetriesExhausted
 from askdb.llm.types import Completion
 
@@ -28,14 +28,30 @@ FALLBACK_CODES = frozenset({404, 429, 503})
 class NoModelAvailable(Exception):
     """Every model in the chain failed."""
 
-    def __init__(self, models: Sequence[str], last: BaseException) -> None:
-        super().__init__(f"no model answered (tried {', '.join(models)}): {last}")
+    def __init__(self, models: Sequence[str], failures: Sequence[BaseException]) -> None:
+        super().__init__(
+            f"no model answered (tried {', '.join(models)}): {failures[-1]}"
+        )
         self.models = tuple(models)
-        self.last = last
+        self.failures = tuple(failures)
+        self.last = failures[-1]
+
+    @property
+    def out_of_quota(self) -> bool:
+        """Whether every model failed because its daily quota ran out.
+
+        The distinction decides whether a long run should stop or carry on.
+        Quota everywhere means the next question fails identically, so
+        stopping is right. A mix of quota and transient saturation does not:
+        the saturated model may answer the very next question, and halting a
+        500-question run over one unlucky moment throws away the afternoon.
+        """
+        return all(isinstance(failure, QuotaExhausted) for failure in self.failures)
 
 
 def should_fall_back(error: BaseException) -> bool:
-    if isinstance(error, RetriesExhausted):
+    # Quotas are counted per model, so another model may still have room.
+    if isinstance(error, QuotaExhausted | RetriesExhausted):
         return True
     if isinstance(error, errors.APIError):
         return getattr(error, "code", None) in FALLBACK_CODES
@@ -65,7 +81,7 @@ class FallbackClient:
         variant: int = 0,
     ) -> Completion:
         order = self._order(model)
-        last: BaseException | None = None
+        failures: list[BaseException] = []
 
         for candidate in order:
             try:
@@ -75,10 +91,10 @@ class FallbackClient:
             except Exception as error:
                 if not should_fall_back(error):
                     raise
-                last = error
+                failures.append(error)
                 continue
 
             return replace(completion, degraded=candidate != order[0])
 
-        assert last is not None
-        raise NoModelAvailable(order, last)
+        assert failures
+        raise NoModelAvailable(order, failures)

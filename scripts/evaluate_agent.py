@@ -17,6 +17,7 @@ from askdb.data.minidev import Question
 from askdb.db import catalog
 from askdb.eval import run
 from askdb.llm.factory import build_client
+from askdb.llm.fallback import NoModelAvailable
 
 
 def group_by_database(questions: list[Question]) -> dict[str, list[Question]]:
@@ -105,8 +106,11 @@ def main(argv: list[str] | None = None) -> int:
 
     client = build_client()
     answered = 0
+    exhausted = False
 
     for db_id, group in sorted(group_by_database(remaining).items()):
+        if exhausted:
+            break
         try:
             database = minidev.resolve_database(databases_root, db_id)
             toolbox = Toolbox(database, catalog.load(database))
@@ -131,6 +135,14 @@ def main(argv: list[str] | None = None) -> int:
             except KeyboardInterrupt:
                 print("\ninterrupted; progress is saved", file=sys.stderr)
                 raise
+            except NoModelAvailable as error:
+                # Every model is out of capacity or quota. The next question
+                # will fail identically, so grinding through hundreds of them
+                # only produces noise. Progress is already on disk.
+                print(f"\nstopping: {error}", file=sys.stderr)
+                print("re-run the same command to resume once capacity returns.", file=sys.stderr)
+                exhausted = True
+                break
             except Exception as error:  # noqa: BLE001 - keep going, record nothing
                 print(f"  q{question.question_id} errored: {error}", file=sys.stderr)
                 continue

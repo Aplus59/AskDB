@@ -18,6 +18,10 @@ dev = [
 data = [
     "huggingface-hub>=0.26",
 ]
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
 
 [build-system]
 requires = ["hatchling"]

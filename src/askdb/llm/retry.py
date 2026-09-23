@@ -17,7 +17,16 @@ from dataclasses import dataclass
 
 
 class TransientError(Exception):
-    """A failure worth retrying, such as a rate limit or a server error."""
+    """A failure worth retrying, such as a rate limit or a server error.
+
+    `retry_after` carries the server's own instruction about how long to
+    wait, when it supplied one. Guessing with exponential backoff is what
+    you do in the absence of that information, not in preference to it.
+    """
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class RetriesExhausted(Exception):
@@ -68,7 +77,12 @@ def with_retries[T](
             last = error
             if attempt == policy.max_attempts:
                 break
-            sleep(uniform(0.0, policy.ceiling_for(attempt)))
+
+            hinted = error.retry_after
+            if hinted is not None:
+                sleep(min(hinted, policy.max_delay))
+            else:
+                sleep(uniform(0.0, policy.ceiling_for(attempt)))
 
     assert last is not None
     raise RetriesExhausted(policy.max_attempts, last)
