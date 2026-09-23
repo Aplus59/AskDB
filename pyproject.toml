@@ -29,6 +29,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/askdb"]
+artifacts = ["src/askdb/api/static/*"]
 
 [tool.ruff]
 line-length = 100

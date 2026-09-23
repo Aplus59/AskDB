@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 from askdb.agent.loop import Agent, AgentResult
 from askdb.agent.tools import Toolbox
@@ -25,6 +26,8 @@ from askdb.config import settings
 from askdb.data import minidev
 
 AgentFactory = Callable[[Toolbox, int | None], Agent]
+
+STATIC = Path(__file__).parent / "static"
 
 
 def _default_agent_factory(toolbox: Toolbox, samples: int | None) -> Agent:
@@ -87,6 +90,12 @@ def create_app(
 
     registry = DatabaseRegistry(databases_root)
     app = FastAPI(title="askdb", version="0.1.0")
+
+    # HEAD as well as GET: uptime checks and load balancers probe with HEAD,
+    # and FastAPI does not add it implicitly.
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(STATIC / "index.html")
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:

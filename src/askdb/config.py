@@ -7,7 +7,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="ASKDB_", extra="ignore")
+    # Anchored to the project rather than the working directory: the service
+    # is often started from somewhere else, and a relative ".env" silently
+    # resolves to nothing, leaving the key unset with no error.
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env", env_prefix="ASKDB_", extra="ignore"
+    )
 
     data_dir: Path = PROJECT_ROOT / "data"
 

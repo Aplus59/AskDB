@@ -221,3 +221,17 @@ def test_asking_with_no_databases_explains_rather_than_crashes(tmp_path: Path) -
 
     assert response.status_code == 404
     assert "none" in response.json()["detail"]
+
+
+def test_the_index_page_is_served(databases_root: Path) -> None:
+    response = build_client(databases_root).get("/")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "askdb" in response.text
+
+
+def test_the_index_answers_head_requests(databases_root: Path) -> None:
+    # Uptime checks and load balancers probe with HEAD, and FastAPI does not
+    # add it implicitly alongside GET.
+    assert build_client(databases_root).head("/").status_code == 200

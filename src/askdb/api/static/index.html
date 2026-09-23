@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>askdb</title>
+<style>
+  :root {
+    --bg: #fbfbfa; --panel: #fff; --ink: #1a1a1a; --muted: #6b6b6b;
+    --line: #e4e4e1; --accent: #2f5fd0; --warn: #9a6200; --bad: #a32020;
+    --code-bg: #f4f4f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a; --panel: #1f2023; --ink: #e8e8e6; --muted: #9a9a96;
+      --line: #32343a; --accent: #7aa2f7; --warn: #d8a657; --bad: #ea6962;
+      --code-bg: #26282c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  select, input[type=text], button {
+    font: inherit; padding: 9px 12px; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--panel); color: var(--ink);
+  }
+  input[type=text] { flex: 1 1 340px; }
+  button { background: var(--accent); color: #fff; border-color: transparent; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: default; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 9px; padding: 16px; margin-bottom: 14px;
+  }
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; letter-spacing: .02em;
+  }
+  .answer  { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  .clarify { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .refuse  { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  ul.reasons { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .scroll { overflow-x: auto; }
+  pre {
+    background: var(--code-bg); padding: 12px; border-radius: 7px;
+    overflow-x: auto; font-size: 13px; margin: 0;
+  }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .trace td { font-size: 13px; }
+  .kind { font-weight: 600; }
+  .err { color: var(--bad); }
+  .empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+  <h1>askdb</h1>
+  <p class="sub">
+    Questions answered in SQL, with the reasoning and the cost shown. The system
+    can decline to answer.
+  </p>
+
+  <form id="ask">
+    <select id="database"></select>
+    <input id="question" type="text" placeholder="e.g. how many schools are in Alameda County?" required>
+    <button id="submit" type="submit">Ask</button>
+  </form>
+
+  <div id="out"></div>
+</main>
+
+<script>
+const out = document.getElementById("out");
+const dbSelect = document.getElementById("database");
+const submit = document.getElementById("submit");
+
+const escape = (value) =>
+  String(value ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function loadDatabases() {
+  // The first call builds a catalog per database, which counts rows across
+  // tables holding a million of them. Saying nothing for several seconds
+  // looks broken.
+  dbSelect.innerHTML = "<option>loading…</option>";
+  submit.disabled = true;
+  try {
+    const databases = await (await fetch("/databases")).json();
+    if (!databases.length) {
+      dbSelect.innerHTML = "<option>no databases found</option>";
+      submit.disabled = true;
+      return;
+    }
+    dbSelect.innerHTML = databases
+      .map((d) => `<option value="${escape(d.name)}">${escape(d.name)} (${d.tables} tables)</option>`)
+      .join("");
+    submit.disabled = false;
+  } catch {
+    dbSelect.innerHTML = "<option>service unavailable</option>";
+    submit.disabled = true;
+  }
+}
+
+function renderRows(body) {
+  if (body.error) return `<p class="err">Query failed: ${escape(body.error)}</p>`;
+  if (!body.rows.length) {
+    return body.decision === "answer"
+      ? '<p class="empty">No rows returned.</p>'
+      : '<p class="empty">Results are withheld because the system is not confident in them.</p>';
+  }
+  const head = body.columns.map((c) => `<th>${escape(c)}</th>`).join("");
+  const rows = body.rows
+    .map((r) => `<tr>${r.map((c) => `<td>${escape(c)}</td>`).join("")}</tr>`)
+    .join("");
+  return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderTrace(trace) {
+  const rows = trace
+    .map(
+      (s) => `<tr>
+        <td class="kind">${escape(s.kind)}</td>
+        <td>${escape(s.detail).slice(0, 180)}</td>
+        <td>${s.tokens || ""}</td>
+        <td>${s.latency_ms ? Math.round(s.latency_ms) + " ms" : ""}</td>
+      </tr>`)
+    .join("");
+  return `<div class="scroll"><table class="trace">
+    <thead><tr><th>step</th><th>detail</th><th>tokens</th><th>time</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function render(body) {
+  const reasons = body.reasons.length
+    ? `<ul class="reasons">${body.reasons.map((r) => `<li>${escape(r)}</li>`).join("")}</ul>`
+    : "";
+
+  const agreement =
+    body.meta.agreement === null ? "" : ` · ${Math.round(body.meta.agreement * 100)}% agreement`;
+
+  out.innerHTML = `
+    <div class="panel">
+      <div class="row">
+        <span class="badge ${escape(body.decision)}">${escape(body.decision)}</span>
+        <span class="meta">confidence ${body.confidence.toFixed(2)}</span>
+      </div>
+      ${reasons}
+    </div>
+
+    <div class="panel">${renderRows(body)}</div>
+
+    <div class="panel">
+      <pre>${escape(body.sql || "(no query produced)")}</pre>
+      <p class="meta">
+        tables considered: ${escape(body.tables_considered.join(", ")) || "none"}
+      </p>
+      <details>
+        <summary>How it got there</summary>
+        ${renderTrace(body.trace)}
+      </details>
+      <p class="meta">
+        ${body.meta.input_tokens + body.meta.output_tokens} tokens ·
+        ${body.meta.model_calls} model call(s) ·
+        ${body.meta.repairs} repair(s) ·
+        ${Math.round(body.meta.latency_ms)} ms${agreement}
+      </p>
+    </div>`;
+}
+
+document.getElementById("ask").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  submit.disabled = true;
+  out.innerHTML = '<div class="panel"><span class="meta">Working…</span></div>';
+
+  try {
+    const response = await fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: document.getElementById("question").value,
+        database: dbSelect.value,
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      out.innerHTML = `<div class="panel err">${escape(body.detail || response.statusText)}</div>`;
+    } else {
+      render(body);
+    }
+  } catch (error) {
+    out.innerHTML = `<div class="panel err">${escape(error)}</div>`;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+loadDatabases();
+</script>
+</body>
+</html>
