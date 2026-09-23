@@ -38,6 +38,7 @@ class QuestionResult:
     latency_ms: float
     tables_shown: tuple[str, ...]
     difficulty: str | None = None
+    rechecks: int = 0
 
     @property
     def total_tokens(self) -> int:
@@ -90,6 +91,7 @@ def run_question(agent: Agent, question: Question, database: Path) -> QuestionRe
         latency_ms=sum(step.latency_ms for step in result.steps),
         tables_shown=result.tables_shown,
         difficulty=question.difficulty,
+        rechecks=result.rechecks,
     )
 
 
@@ -128,6 +130,7 @@ class Summary:
     strict_accuracy: float
     repair_rate: float
     recovery_rate: float
+    recheck_rate: float
     avg_tokens: float
     avg_model_calls: float
     failures: dict[str, int]
@@ -140,6 +143,7 @@ class Summary:
             f"strict accuracy    {self.strict_accuracy:.3f}",
             f"needed a repair    {self.repair_rate:.3f}",
             f"saved by a repair  {self.recovery_rate:.3f}",
+            f"self-check fired   {self.recheck_rate:.3f}",
             f"tokens / question  {self.avg_tokens:.0f}",
             f"calls / question   {self.avg_model_calls:.2f}",
         ]
@@ -163,7 +167,7 @@ def _ratio(count: int, total: int) -> float:
 def summarize(results: Sequence[QuestionResult]) -> Summary:
     total = len(results)
     if total == 0:
-        return Summary(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, {}, {})
+        return Summary(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, {}, {})
 
     failures: dict[str, int] = {}
     for result in results:
@@ -185,6 +189,7 @@ def summarize(results: Sequence[QuestionResult]) -> Summary:
         strict_accuracy=_ratio(sum(1 for r in results if r.exact_match), total),
         repair_rate=_ratio(sum(1 for r in results if r.repairs > 0), total),
         recovery_rate=_ratio(sum(1 for r in results if r.recovered), total),
+        recheck_rate=_ratio(sum(1 for r in results if r.rechecks > 0), total),
         avg_tokens=sum(r.total_tokens for r in results) / total,
         avg_model_calls=sum(r.model_calls for r in results) / total,
         failures=failures,

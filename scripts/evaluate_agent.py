@@ -41,9 +41,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-repairs", type=int, default=2)
     parser.add_argument("--schema-tables", type=int, default=5)
     parser.add_argument(
-        "--no-value-grounding",
+        "--value-grounding",
         action="store_true",
-        help="omit example values from the schema shown to the model",
+        help="include example column values in the schema; measured at +77%% tokens "
+        "for no accuracy change (see docs/agent-experiments.md)",
+    )
+    parser.add_argument(
+        "--no-self-check",
+        action="store_true",
+        help="do not re-examine successful queries whose result looks wrong",
     )
     parser.add_argument(
         "--fresh", action="store_true", help="ignore previous results in the output file"
@@ -100,7 +106,8 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             max_repairs=args.max_repairs,
             schema_tables=args.schema_tables,
-            ground_values=not args.no_value_grounding,
+            ground_values=args.value_grounding,
+            self_check=not args.no_self_check,
         )
 
         for question in group:

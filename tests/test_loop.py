@@ -143,19 +143,100 @@ def test_execution_steps_carry_no_token_cost(toolbox: Toolbox) -> None:
     assert execute.usage.total_tokens == 0
 
 
-def test_example_values_reach_the_prompt_by_default(toolbox: Toolbox) -> None:
+def test_example_values_are_off_by_default(toolbox: Toolbox) -> None:
+    # Measured at +77% tokens for no accuracy change; see
+    # docs/agent-experiments.md.
     model = ScriptedModel("SELECT name FROM artist")
     Agent(toolbox, model).answer("which country is the musician from")
+
+    assert "e.g." not in model.prompts[0]
+    assert "CREATE TABLE artist" in model.prompts[0]
+
+
+def test_value_grounding_can_be_switched_on(toolbox: Toolbox) -> None:
+    model = ScriptedModel("SELECT name FROM artist")
+    Agent(toolbox, model, ground_values=True).answer("which country")
 
     assert "e.g." in model.prompts[0]
 
 
-def test_value_grounding_can_be_turned_off_for_comparison(toolbox: Toolbox) -> None:
-    model = ScriptedModel("SELECT name FROM artist")
-    Agent(toolbox, model, ground_values=False).answer("which country")
+def test_an_empty_result_triggers_a_recheck(toolbox: Toolbox) -> None:
+    model = ScriptedModel(
+        "SELECT name FROM artist WHERE country = 'XX'",
+        "SELECT name FROM artist",
+    )
+    result = Agent(toolbox, model).answer("which artists are there")
 
-    assert "e.g." not in model.prompts[0]
-    assert "CREATE TABLE artist" in model.prompts[0]
+    assert result.rechecks == 1
+    assert result.concerns == ("empty_result",)
+    assert result.output is not None
+    assert len(result.output.rows) == 3
+
+
+def test_the_recheck_prompt_explains_the_concern(toolbox: Toolbox) -> None:
+    model = ScriptedModel(
+        "SELECT name FROM artist WHERE country = 'XX'",
+        "SELECT name FROM artist",
+    )
+    Agent(toolbox, model).answer("which artists are there")
+
+    assert "returned no rows" in model.prompts[1]
+    assert "executed without error" in model.prompts[1]
+
+
+def test_a_clean_result_is_never_rechecked(toolbox: Toolbox) -> None:
+    # Rechecking a healthy answer costs a call and risks making it worse.
+    model = ScriptedModel("SELECT name FROM artist", "SELECT 999")
+    result = Agent(toolbox, model).answer("which artists are there")
+
+    assert result.rechecks == 0
+    assert result.model_calls == 1
+
+
+def test_only_one_recheck_happens(toolbox: Toolbox) -> None:
+    model = ScriptedModel(*["SELECT name FROM artist WHERE country = 'XX'"] * 5)
+    result = Agent(toolbox, model, max_repairs=3).answer("which artists are there")
+
+    assert result.rechecks == 1
+    assert result.model_calls == 2
+
+
+def test_a_recheck_that_resolves_the_concern_is_adopted(toolbox: Toolbox) -> None:
+    model = ScriptedModel(
+        "SELECT name FROM artist WHERE country = 'XX'",
+        "SELECT name FROM artist",
+    )
+    result = Agent(toolbox, model).answer("which artists are there")
+
+    assert result.sql == "SELECT name FROM artist"
+
+
+def test_a_recheck_that_stays_suspicious_keeps_the_first_answer(toolbox: Toolbox) -> None:
+    # Neither result is convincing, so there is no reason to prefer the
+    # second. Swapping would make the outcome depend on call ordering.
+    model = ScriptedModel(
+        "SELECT name FROM artist WHERE country = 'XX'",
+        "SELECT name FROM artist WHERE country = 'YY'",
+    )
+    result = Agent(toolbox, model).answer("which artists are there")
+
+    assert result.sql == "SELECT name FROM artist WHERE country = 'XX'"
+
+
+def test_self_check_can_be_disabled_for_comparison(toolbox: Toolbox) -> None:
+    model = ScriptedModel("SELECT name FROM artist WHERE country = 'XX'")
+    result = Agent(toolbox, model, self_check=False).answer("which artists are there")
+
+    assert result.rechecks == 0
+    assert result.model_calls == 1
+
+
+def test_execution_errors_still_repair_rather_than_recheck(toolbox: Toolbox) -> None:
+    model = ScriptedModel("SELECT nope FROM artist", "SELECT name FROM artist")
+    result = Agent(toolbox, model).answer("which artists are there")
+
+    assert result.repairs == 1
+    assert result.rechecks == 0
 
 
 def test_tables_shown_are_reported(toolbox: Toolbox) -> None:

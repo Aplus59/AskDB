@@ -9,6 +9,7 @@ checked before anything else.
 import time
 from typing import Any, Protocol
 
+import httpx
 from google import genai
 from google.genai import errors, types
 
@@ -21,6 +22,20 @@ from askdb.llm.types import Completion, Usage
 # attempt. Every other 4xx means the request itself is wrong, and retrying an
 # invalid request just wastes quota.
 TRANSIENT_CLIENT_CODES = frozenset({408, 429})
+
+# The API never answered at all: DNS failed, the connection dropped, the read
+# timed out. A 110-question run lost 53 questions to `getaddrinfo failed`
+# because these were not treated as retryable, so they are now.
+TRANSIENT_NETWORK_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadError,
+    httpx.ReadTimeout,
+    httpx.RemoteProtocolError,
+    httpx.WriteError,
+    httpx.WriteTimeout,
+    httpx.PoolTimeout,
+)
 
 
 class ModelClient(Protocol):
@@ -96,6 +111,8 @@ class GeminiClient:
                     contents=prompt,
                     config=types.GenerateContentConfig(temperature=temperature),
                 )
+            except TRANSIENT_NETWORK_ERRORS as error:
+                raise retry.TransientError(f"{type(error).__name__}: {error}") from error
             except errors.APIError as error:
                 if is_transient(error):
                     raise retry.TransientError(str(error)) from error

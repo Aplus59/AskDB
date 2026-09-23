@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
 import pytest
 from google import genai
 from google.genai import errors
@@ -106,6 +107,24 @@ def test_retries_a_server_error() -> None:
         errors.ServerError(503, {"error": {"message": "unavailable"}}),
         FakeResponse("recovered"),
     )
+    assert build(models).complete("hello").text == "recovered"
+
+
+def test_retries_a_dns_failure() -> None:
+    # A real 110-question run lost 53 questions to `getaddrinfo failed`
+    # because connection errors were not classified as retryable.
+    models = FakeModels(
+        httpx.ConnectError("[Errno 11001] getaddrinfo failed"),
+        FakeResponse("recovered"),
+    )
+    result = build(models).complete("hello")
+
+    assert result.text == "recovered"
+    assert result.attempts == 2
+
+
+def test_retries_a_read_timeout() -> None:
+    models = FakeModels(httpx.ReadTimeout("timed out"), FakeResponse("recovered"))
     assert build(models).complete("hello").text == "recovered"
 
 

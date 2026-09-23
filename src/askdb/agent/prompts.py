@@ -41,6 +41,25 @@ Rules:
 """
 
 
+RECHECK = """\
+You write SQLite queries against the schema below.
+
+{schema}
+
+Question: {question}
+{hint}
+You wrote this query, and it executed without error:
+{sql}
+
+However the result looks wrong: {concern}
+
+Rules:
+- Reply with one SQL query and nothing else.
+- If the query was already right, reply with it unchanged.
+- Use only the tables and columns shown above.
+"""
+
+
 def _hint(evidence: str) -> str:
     """Evidence is optional, and an empty label reads as a missing value."""
     return f"Hint: {evidence}\n" if evidence.strip() else ""
@@ -59,6 +78,18 @@ def repair_prompt(
         hint=_hint(evidence),
         sql=sql,
         error=error,
+    )
+
+
+def recheck_prompt(
+    schema: str, question: str, sql: str, concern: str, evidence: str = ""
+) -> str:
+    return RECHECK.format(
+        schema=schema,
+        question=question,
+        hint=_hint(evidence),
+        sql=sql,
+        concern=concern,
     )
 
 
