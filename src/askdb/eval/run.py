@@ -39,6 +39,10 @@ class QuestionResult:
     tables_shown: tuple[str, ...]
     difficulty: str | None = None
     rechecks: int = 0
+    decision: str = "answer"
+    confidence: float = 1.0
+    unresolved_concern: bool = False
+    coverage: float = 1.0
 
     @property
     def total_tokens(self) -> int:
@@ -92,6 +96,10 @@ def run_question(agent: Agent, question: Question, database: Path) -> QuestionRe
         tables_shown=result.tables_shown,
         difficulty=question.difficulty,
         rechecks=result.rechecks,
+        decision=result.verdict.decision if result.verdict else "answer",
+        confidence=result.verdict.confidence if result.verdict else 1.0,
+        unresolved_concern=bool(result.concerns) and result.rechecks > 0,
+        coverage=result.verdict.coverage if result.verdict else 1.0,
     )
 
 
