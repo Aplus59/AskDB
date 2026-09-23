@@ -8,9 +8,18 @@ presented as an answer. A confidently wrong number is worse than no number,
 because nobody knows to check it. This one measures how often that happens and
 can decline to answer.
 
-> **Headline numbers are filled in from the full 500-question run.** Everything
-> below this line is measured, and every claim links to the run that produced
-> it. Where a result was inconclusive, it says so.
+| | |
+|---|---|
+| **Execution accuracy** | **0.641** |
+| Strict (multiset) comparison | 0.597 |
+| Questions scored | 454 (10 of 11 databases) |
+| Tokens per question | 944 |
+| Cost | ~$0.48 per 1,000 questions |
+
+Measured on BIRD Mini-Dev with `gemini-3.5-flash-lite`. The eleventh database
+never ran: the free tier allows 20 requests per day per model and the quota ran
+out. Every claim below links to the run that produced it, and where a result
+was inconclusive it says so.
 
 ## What I built, measured, and removed
 
@@ -21,7 +30,7 @@ this repository.
 | Change | Cost | Result | Kept |
 |---|---|---|:--:|
 | Example column values in the schema | +61% tokens | +2.8 points, McNemar p = 0.51 | ✗ |
-| Re-checking suspicious results | ~free | fires on 2% of questions | ✓ |
+| Re-checking suspicious results | ~free | fires on 7.7%, the only signal with real lift | ✓ |
 | 3-sample self-consistency voting | +177% tokens | 0 fixed, 2 broken | ✗ |
 
 Details in [docs/agent-experiments.md](docs/agent-experiments.md).
@@ -96,9 +105,30 @@ with corrections moving leaderboard positions by up to nine places. A raw score
 is therefore not evidence on its own.
 
 Failures are read and labelled: genuine model error, answer-shape mismatch,
-ambiguous question, benchmark annotation error, or unanswerable. In the first
-sample of five, one was a benchmark bug — the reference query tested the same
-column twice — and two returned the right data in a different shape.
+ambiguous question, benchmark annotation error, or unanswerable.
+
+Of the first 11 failures classified, **only 2 were genuine reasoning errors**:
+
+| Category | Count |
+|---|---:|
+| format_mismatch — right data, different shape | 6 |
+| model_error | 2 |
+| ambiguous question | 2 |
+| annotation_error — the reference is wrong | 1 |
+
+`california_schools` scores worst of all ten databases at 0.367, and this is
+why: **the same concept exists under three names across three tables.** School
+name is `schools.School`, `frpm."School Name"` and `satscores.sname`. The model
+picks a semantically correct column that is not the one the reference happened
+to pick, and set comparison marks it wrong.
+
+Other examples: `RANK()` against `DENSE_RANK()` where the question never says
+how ties break; `'well-finished'` against `'Yes'` for identical `CASE` logic;
+the right month returned as `201307` instead of `07`.
+
+Eleven of 165 failures are labelled, so treat the proportions as a direction
+rather than a measurement. Two of the 500 reference queries also time out after
+thirty seconds and are excluded from scoring entirely.
 
 ```bash
 python scripts/audit_failures.py --results data/runs/main.jsonl --list
@@ -108,20 +138,43 @@ python scripts/audit_failures.py --results data/runs/main.jsonl
 
 ## Abstention
 
-Three outcomes rather than two. The confidence score combines repairs used,
-whether a self-check concern survived, and how much of the question's
-vocabulary appears in the schema — all recorded per question, so the whole
-threshold sweep replays offline in milliseconds rather than re-running the
-system once per threshold.
+Three outcomes rather than two: answer, ask for clarification, or decline.
+Everything the score uses is recorded per question, so the whole threshold
+sweep replays offline in milliseconds rather than re-running the system once
+per threshold.
 
 ```bash
 python scripts/sweep_abstention.py --results data/runs/main.jsonl
 ```
 
-**Honest status:** when it fires it is usually right (78% of declined questions
-would have been wrong), but it fires on about 5% of questions, so it catches
-roughly one wrong answer in nine. The signal has good precision and poor
-recall. [docs/abstention.md](docs/abstention.md) sets out what would fix it.
+### Three signals were tried; two were removed
+
+Measured over 454 answered questions against a base error rate of 0.359:
+
+| Signal | Fires on | Error rate when it fires | Lift |
+|---|---:|---:|---:|
+| Unresolved self-check concern | 35 | 0.657 | **1.83×** |
+| Low vocabulary coverage | 119 | 0.378 | 1.05× |
+| Query needed a repair | 10 | 0.300 | **0.84×** |
+
+Vocabulary coverage fires on a quarter of all questions and returns the base
+rate with noise. The repair penalty points the **wrong way** — a repaired query
+is no likelier to be wrong, because the database rejected the first attempt and
+the model corrected it under real feedback, so the surviving query has been
+validated in a way the others have not.
+
+Dropping both improved the system on every axis that matters:
+
+| | Three signals | One signal |
+|---|---:|---:|
+| Coverage | 0.678 | **0.919** |
+| Abstention precision | 0.442 | **0.676** |
+
+The old configuration declined a third of all questions and was right about
+those barely better than chance. What is left is precise and rare, which is a
+smaller claim than a smooth curve over three, and a true one.
+
+[docs/abstention.md](docs/abstention.md) has the full sweep.
 
 ## Running it
 
