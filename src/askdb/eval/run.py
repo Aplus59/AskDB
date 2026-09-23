@@ -137,9 +137,15 @@ def load_results(path: Path) -> dict[int, QuestionResult]:
     return found
 
 
+# The reference query itself could not be run, so the question says nothing
+# about the system either way.
+UNSCORABLE_REASONS = frozenset({"gold_failed"})
+
+
 @dataclass(frozen=True)
 class Summary:
     total: int
+    unscorable: int
     accuracy: float
     strict_accuracy: float
     repair_rate: float
@@ -153,6 +159,11 @@ class Summary:
     def render(self) -> str:
         lines = [
             f"questions          {self.total}",
+            *(
+                [f"unscorable         {self.unscorable}  (the reference query would not run)"]
+                if self.unscorable
+                else []
+            ),
             f"execution accuracy {self.accuracy:.3f}",
             f"strict accuracy    {self.strict_accuracy:.3f}",
             f"needed a repair    {self.repair_rate:.3f}",
@@ -179,19 +190,31 @@ def _ratio(count: int, total: int) -> float:
 
 
 def summarize(results: Sequence[QuestionResult]) -> Summary:
-    total = len(results)
+    """Aggregate a run.
+
+    Accuracy is computed over the questions that could be scored. Two of the
+    500 Mini-Dev references time out even given thirty seconds, and counting
+    those against the system would blame it for the benchmark.
+    """
+    unscorable = sum(
+        1 for r in results if not r.match and r.failure_reason in UNSCORABLE_REASONS
+    )
+    scorable = [
+        r for r in results if r.match or r.failure_reason not in UNSCORABLE_REASONS
+    ]
+    total = len(scorable)
     if total == 0:
-        return Summary(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, {}, {})
+        return Summary(0, unscorable, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, {}, {})
 
     failures: dict[str, int] = {}
-    for result in results:
+    for result in scorable:
         if not result.match and result.failure_reason:
             failures[result.failure_reason] = failures.get(result.failure_reason, 0) + 1
 
     by_difficulty: dict[str, tuple[int, float]] = {}
-    levels = {result.difficulty for result in results if result.difficulty}
+    levels = {result.difficulty for result in scorable if result.difficulty}
     for level in levels:
-        group = [result for result in results if result.difficulty == level]
+        group = [result for result in scorable if result.difficulty == level]
         by_difficulty[level] = (
             len(group),
             _ratio(sum(1 for r in group if r.match), len(group)),
@@ -199,13 +222,14 @@ def summarize(results: Sequence[QuestionResult]) -> Summary:
 
     return Summary(
         total=total,
-        accuracy=_ratio(sum(1 for r in results if r.match), total),
-        strict_accuracy=_ratio(sum(1 for r in results if r.exact_match), total),
-        repair_rate=_ratio(sum(1 for r in results if r.repairs > 0), total),
-        recovery_rate=_ratio(sum(1 for r in results if r.recovered), total),
-        recheck_rate=_ratio(sum(1 for r in results if r.rechecks > 0), total),
-        avg_tokens=sum(r.total_tokens for r in results) / total,
-        avg_model_calls=sum(r.model_calls for r in results) / total,
+        unscorable=unscorable,
+        accuracy=_ratio(sum(1 for r in scorable if r.match), total),
+        strict_accuracy=_ratio(sum(1 for r in scorable if r.exact_match), total),
+        repair_rate=_ratio(sum(1 for r in scorable if r.repairs > 0), total),
+        recovery_rate=_ratio(sum(1 for r in scorable if r.recovered), total),
+        recheck_rate=_ratio(sum(1 for r in scorable if r.rechecks > 0), total),
+        avg_tokens=sum(r.total_tokens for r in scorable) / total,
+        avg_model_calls=sum(r.model_calls for r in scorable) / total,
         failures=failures,
         by_difficulty=by_difficulty,
     )

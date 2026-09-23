@@ -203,3 +203,41 @@ def test_summary_renders_the_headline_numbers() -> None:
 
     assert "execution accuracy 0.500" in rendered
     assert "wrong_rows" in rendered
+
+
+def test_a_question_whose_reference_fails_is_not_counted_against_accuracy() -> None:
+    # Two of the 500 Mini-Dev references time out even given thirty seconds.
+    # Counting those as failures blames the system for the benchmark.
+    results = [
+        a_result(1, match=True),
+        a_result(2, match=False, reason="gold_failed"),
+    ]
+    summary = run.summarize(results)
+
+    assert summary.total == 1
+    assert summary.unscorable == 1
+    assert summary.accuracy == 1.0
+
+
+def test_unscorable_questions_are_reported_not_hidden() -> None:
+    results = [a_result(1, match=True), a_result(2, match=False, reason="gold_failed")]
+    assert "unscorable         1" in run.summarize(results).render()
+
+
+def test_unscorable_questions_leave_the_failure_breakdown() -> None:
+    results = [
+        a_result(1, match=False, reason="wrong_rows"),
+        a_result(2, match=False, reason="gold_failed"),
+    ]
+    assert run.summarize(results).failures == {"wrong_rows": 1}
+
+
+def test_everything_unscorable_still_reports_the_count() -> None:
+    summary = run.summarize([a_result(1, match=False, reason="gold_failed")])
+
+    assert summary.total == 0
+    assert summary.unscorable == 1
+
+
+def test_no_unscorable_questions_means_no_extra_line() -> None:
+    assert "unscorable" not in run.summarize([a_result(1, match=True)]).render()

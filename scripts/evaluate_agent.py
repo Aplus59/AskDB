@@ -20,6 +20,17 @@ from askdb.llm.factory import build_client
 from askdb.llm.fallback import NoModelAvailable
 
 
+def should_stop(error: NoModelAvailable) -> bool:
+    """Whether a run should halt rather than move to the next question.
+
+    Extracted so the decision is testable. It previously lived inline in the
+    loop, where an edit that failed to apply looked exactly like one that
+    worked: every linter passed, and a run lost 47 questions to a transient
+    503 that it should have shrugged off.
+    """
+    return error.out_of_quota
+
+
 def group_by_database(questions: list[Question]) -> dict[str, list[Question]]:
     grouped: dict[str, list[Question]] = defaultdict(list)
     for question in questions:
@@ -142,11 +153,17 @@ def main(argv: list[str] | None = None) -> int:
                 print("\ninterrupted; progress is saved", file=sys.stderr)
                 raise
             except NoModelAvailable as error:
-                # Every model is out of capacity or quota. The next question
-                # will fail identically, so grinding through hundreds of them
-                # only produces noise. Progress is already on disk.
-                print(f"\nstopping: {error}", file=sys.stderr)
-                print("re-run the same command to resume once capacity returns.", file=sys.stderr)
+                if not should_stop(error):
+                    # Transient saturation. The next question may well work,
+                    # and halting a 500-question run over one unlucky moment
+                    # throws away the afternoon.
+                    print(f"  q{question.question_id}: {error}", file=sys.stderr)
+                    continue
+                # Quota everywhere: the next question fails identically, so
+                # grinding through hundreds of them only produces noise.
+                # Progress is already on disk.
+                print(f"\nstopping, every model is out of quota: {error}", file=sys.stderr)
+                print("re-run the same command to resume after the reset.", file=sys.stderr)
                 exhausted = True
                 break
             except Exception as error:  # noqa: BLE001 - keep going, record nothing
