@@ -36,6 +36,11 @@ REPAIR_PENALTY = 0.15
 LOW_COVERAGE_PENALTY = 0.3
 COVERAGE_FLOOR = 0.25
 
+# Disagreement between repeated draws is the only continuous input here.
+# The others fire on a few percent of questions, which left the score
+# effectively binary and gave the thresholds nothing to sweep over.
+DISAGREEMENT_WEIGHT = 0.8
+
 # Words that carry no schema meaning. Counting them as misses would make every
 # question look uncovered.
 _STOPWORD_TEXT = """
@@ -110,6 +115,7 @@ def assess(
     repairs: int = 0,
     unresolved_concern: bool = False,
     query_failed: bool = False,
+    agreement: float | None = None,
     clarify_below: float = DEFAULT_CLARIFY_BELOW,
     refuse_below: float = DEFAULT_REFUSE_BELOW,
 ) -> Verdict:
@@ -124,6 +130,12 @@ def assess(
 
     score = 1.0
     reasons: list[str] = []
+
+    if agreement is not None and agreement < 1.0:
+        score -= (1.0 - agreement) * DISAGREEMENT_WEIGHT
+        reasons.append(
+            f"repeated attempts agreed only {agreement:.0%} of the time"
+        )
 
     if unresolved_concern:
         score -= UNRESOLVED_CONCERN_PENALTY

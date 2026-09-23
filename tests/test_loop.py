@@ -16,7 +16,12 @@ class ScriptedModel:
         self.prompts: list[str] = []
 
     def complete(
-        self, prompt: str, *, model: str | None = None, temperature: float = 0.0
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        temperature: float = 0.0,
+        variant: int = 0,
     ) -> Completion:
         self.prompts.append(prompt)
         text = self.responses.pop(0) if self.responses else "SELECT 1"
@@ -237,6 +242,91 @@ def test_execution_errors_still_repair_rather_than_recheck(toolbox: Toolbox) -> 
 
     assert result.repairs == 1
     assert result.rechecks == 0
+
+
+def test_a_single_sample_does_not_vote(toolbox: Toolbox) -> None:
+    model = ScriptedModel("SELECT name FROM artist")
+    result = Agent(toolbox, model).answer("which artists are there")
+
+    assert result.agreement is None
+    assert result.model_calls == 1
+
+
+def test_sampling_draws_the_query_several_times(toolbox: Toolbox) -> None:
+    model = ScriptedModel(*["SELECT name FROM artist"] * 3)
+    result = Agent(toolbox, model, samples=3).answer("which artists are there")
+
+    assert result.model_calls == 3
+    assert result.agreement == 1.0
+
+
+def test_unanimous_draws_report_full_agreement(toolbox: Toolbox) -> None:
+    model = ScriptedModel(
+        "SELECT name FROM artist",
+        "SELECT name FROM artist ORDER BY name DESC",
+        "SELECT DISTINCT name FROM artist",
+    )
+    # Three different queries returning identical rows: that is agreement,
+    # not confusion.
+    result = Agent(toolbox, model, samples=3).answer("which artists are there")
+
+    assert result.agreement == 1.0
+
+
+def test_disagreeing_draws_lower_the_agreement(toolbox: Toolbox) -> None:
+    model = ScriptedModel(
+        "SELECT name FROM artist",
+        "SELECT name FROM artist",
+        "SELECT name FROM artist WHERE country = 'ML'",
+    )
+    result = Agent(toolbox, model, samples=3).answer("which artists are there")
+
+    assert result.agreement == pytest.approx(2 / 3)
+
+
+def test_disagreement_lowers_confidence(toolbox: Toolbox) -> None:
+    model = ScriptedModel(
+        "SELECT name FROM artist",
+        "SELECT name FROM artist WHERE country = 'ML'",
+        "SELECT name FROM artist WHERE country = 'US'",
+    )
+    result = Agent(toolbox, model, samples=3).answer("which artists are there")
+
+    assert result.verdict is not None
+    assert result.verdict.confidence < 1.0
+
+
+def test_sampling_keeps_the_majority_answer(toolbox: Toolbox) -> None:
+    model = ScriptedModel(
+        "SELECT name FROM artist WHERE country = 'ML'",
+        "SELECT name FROM artist",
+        "SELECT name FROM artist",
+    )
+    result = Agent(toolbox, model, samples=3).answer("which artists are there")
+
+    assert result.output is not None
+    assert len(result.output.rows) == 3
+
+
+def test_repairs_are_not_resampled(toolbox: Toolbox) -> None:
+    # Three draws for the draft, then a single repair: a repair already has
+    # the database's error to work from, which beats another opinion.
+    model = ScriptedModel(
+        *["SELECT nope FROM artist"] * 3,
+        "SELECT name FROM artist",
+    )
+    result = Agent(toolbox, model, samples=3).answer("which artists are there")
+
+    assert result.model_calls == 4
+    assert result.repairs == 1
+
+
+def test_sampling_records_a_vote_step(toolbox: Toolbox) -> None:
+    model = ScriptedModel(*["SELECT name FROM artist"] * 2)
+    result = Agent(toolbox, model, samples=2).answer("which artists are there")
+
+    vote_step = next(step for step in result.steps if step.kind == "vote")
+    assert "agreement" in vote_step.detail
 
 
 def test_tables_shown_are_reported(toolbox: Toolbox) -> None:

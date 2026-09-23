@@ -33,6 +33,8 @@ def decide(
         return confidence.REFUSE
 
     score = 1.0
+    if result.agreement is not None and result.agreement < 1.0:
+        score -= (1.0 - result.agreement) * confidence.DISAGREEMENT_WEIGHT
     if result.unresolved_concern:
         score -= confidence.UNRESOLVED_CONCERN_PENALTY
     if result.repairs:

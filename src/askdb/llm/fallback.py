@@ -57,7 +57,12 @@ class FallbackClient:
         return (preferred, *(model for model in self._chain if model != preferred))
 
     def complete(
-        self, prompt: str, *, model: str | None = None, temperature: float = 0.0
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        temperature: float = 0.0,
+        variant: int = 0,
     ) -> Completion:
         order = self._order(model)
         last: BaseException | None = None
@@ -65,7 +70,7 @@ class FallbackClient:
         for candidate in order:
             try:
                 completion = self._inner.complete(
-                    prompt, model=candidate, temperature=temperature
+                    prompt, model=candidate, temperature=temperature, variant=variant
                 )
             except Exception as error:
                 if not should_fall_back(error):

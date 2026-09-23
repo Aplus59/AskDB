@@ -173,6 +173,28 @@ def test_different_temperatures_are_cached_separately(tmp_path: Path) -> None:
     assert len(cache) == 2
 
 
+def test_repeated_draws_are_cached_separately(tmp_path: Path) -> None:
+    # Without this, sampling the same prompt five times returns five copies of
+    # one cached response, and measuring agreement between them would be
+    # measuring the cache.
+    cache = ResponseCache(tmp_path / "c.sqlite")
+    models = FakeModels(FakeResponse("first"), FakeResponse("second"))
+    client = build(models, cache)
+
+    assert client.complete("hello", variant=0).text == "first"
+    assert client.complete("hello", variant=1).text == "second"
+    assert len(cache) == 2
+
+
+def test_the_same_variant_still_hits_the_cache(tmp_path: Path) -> None:
+    cache = ResponseCache(tmp_path / "c.sqlite")
+    models = FakeModels(FakeResponse("first"))
+    client = build(models, cache)
+
+    assert client.complete("hello", variant=3).text == "first"
+    assert client.complete("hello", variant=3).cached
+
+
 @pytest.mark.parametrize("code", [408, 429])
 def test_transient_client_codes(code: int) -> None:
     assert is_transient(errors.ClientError(code, {}))

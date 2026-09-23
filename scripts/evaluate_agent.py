@@ -46,6 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", action="append", help="restrict to these databases")
     parser.add_argument("--model", default=None, help="override the model")
     parser.add_argument("--max-repairs", type=int, default=2)
+    parser.add_argument(
+        "--samples",
+        type=int,
+        default=1,
+        help="draw the first query N times and keep the most agreed-upon answer; "
+        "costs N times the tokens but yields a continuous confidence signal",
+    )
     parser.add_argument("--schema-tables", type=int, default=5)
     parser.add_argument(
         "--value-grounding",
@@ -115,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             schema_tables=args.schema_tables,
             ground_values=args.value_grounding,
             self_check=not args.no_self_check,
+            samples=args.samples,
         )
 
         for question in group:

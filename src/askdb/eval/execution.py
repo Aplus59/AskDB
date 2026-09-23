@@ -142,6 +142,15 @@ def _normalize_rows(rows: tuple[Row, ...]) -> list[Row]:
     return [tuple(_normalize(value) for value in row) for row in rows]
 
 
+def row_signature(rows: tuple[Row, ...]) -> frozenset[Row]:
+    """A hashable identity for a result set, ignoring row order.
+
+    Used to group queries that returned the same thing, so that two
+    differently written but equivalent queries count as agreeing.
+    """
+    return frozenset(_normalize_rows(rows))
+
+
 def compare_rows(predicted: tuple[Row, ...], gold: tuple[Row, ...]) -> tuple[bool, bool]:
     """Return (set match, multiset match) for two result sets."""
     left = _normalize_rows(predicted)

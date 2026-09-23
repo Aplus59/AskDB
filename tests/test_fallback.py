@@ -14,7 +14,12 @@ class ScriptedClient:
         self.calls: list[str] = []
 
     def complete(
-        self, prompt: str, *, model: str | None = None, temperature: float = 0.0
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        temperature: float = 0.0,
+        variant: int = 0,
     ) -> Completion:
         assert model is not None
         self.calls.append(model)

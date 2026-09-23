@@ -46,7 +46,12 @@ class ModelClient(Protocol):
     """
 
     def complete(
-        self, prompt: str, *, model: str | None = None, temperature: float = 0.0
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        temperature: float = 0.0,
+        variant: int = 0,
     ) -> Completion: ...
 
 
@@ -81,10 +86,22 @@ class GeminiClient:
         self._default_model = default_model or settings.model_small
 
     def complete(
-        self, prompt: str, *, model: str | None = None, temperature: float = 0.0
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        temperature: float = 0.0,
+        variant: int = 0,
     ) -> Completion:
+        """Generate a completion, via the cache when one is configured.
+
+        `variant` distinguishes repeated draws of the same prompt. Without it,
+        sampling the same question five times would return five copies of one
+        cached response, and any measure of agreement between them would be a
+        measurement of the cache.
+        """
         chosen = model or self._default_model
-        params: dict[str, Any] = {"temperature": temperature}
+        params: dict[str, Any] = {"temperature": temperature, "variant": variant}
         key = cache_key(chosen, prompt, params)
 
         if self._cache is not None:

@@ -43,6 +43,7 @@ class QuestionResult:
     confidence: float = 1.0
     unresolved_concern: bool = False
     coverage: float = 1.0
+    agreement: float | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -100,6 +101,7 @@ def run_question(agent: Agent, question: Question, database: Path) -> QuestionRe
         confidence=result.verdict.confidence if result.verdict else 1.0,
         unresolved_concern=bool(result.concerns) and result.rechecks > 0,
         coverage=result.verdict.coverage if result.verdict else 1.0,
+        agreement=result.agreement,
     )
 
 
