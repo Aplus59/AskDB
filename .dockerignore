@@ -1,0 +1,20 @@
+.git
+.github
+.venv
+venv
+
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Never build the key into an image.
+.env
+
+# Mounted at runtime, not copied: roughly 1.5 GB of databases.
+data
+
+docs
+tests

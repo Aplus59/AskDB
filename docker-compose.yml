@@ -1,0 +1,23 @@
+services:
+  askdb:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Supplied from the host's environment or a local .env file. Never
+      # written into the image.
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:?set GOOGLE_API_KEY in your environment or .env}
+      GOOGLE_GENAI_USE_VERTEXAI: "FALSE"
+      # The databases are mounted read-only, so the response cache cannot
+      # live beside them.
+      ASKDB_CACHE_DIR: /cache
+    volumes:
+      # Read-only at the mount as well as at the SQLite connection. The
+      # application already opens every database with mode=ro; making the
+      # mount read-only means a bug in that layer still cannot write.
+      - ./data:/data:ro
+      - askdb-cache:/cache
+    restart: unless-stopped
+
+volumes:
+  askdb-cache:

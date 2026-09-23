@@ -235,3 +235,19 @@ def test_the_index_answers_head_requests(databases_root: Path) -> None:
     # Uptime checks and load balancers probe with HEAD, and FastAPI does not
     # add it implicitly alongside GET.
     assert build_client(databases_root).head("/").status_code == 200
+
+
+def test_the_cache_can_live_apart_from_the_databases(tmp_path: Path) -> None:
+    # In a container the databases are mounted read-only, so the response
+    # cache cannot default to sitting beside them.
+    from askdb.config import Settings
+
+    settings = Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache")
+    assert settings.response_cache == tmp_path / "cache" / "responses.sqlite"
+
+
+def test_the_cache_defaults_beside_the_data(tmp_path: Path) -> None:
+    from askdb.config import Settings
+
+    settings = Settings(data_dir=tmp_path / "data")
+    assert settings.response_cache == tmp_path / "data" / "responses.sqlite"

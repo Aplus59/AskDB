@@ -129,7 +129,7 @@ recall. [docs/abstention.md](docs/abstention.md) sets out what would fix it.
 python -m venv .venv
 .venv/bin/pip install -e ".[dev,api,data]"
 
-.venv/bin/pytest          # 346 tests, no API key or dataset required
+.venv/bin/pytest          # no API key or dataset required
 .venv/bin/ruff check .
 .venv/bin/mypy src tests scripts
 ```
@@ -157,6 +157,23 @@ uvicorn askdb.api.app:create_app --factory      # the HTTP service
 Evaluation runs append to disk as they go and resume where they stopped. That
 is not defensive programming: the free tier allows 20 requests per day per
 model, so long runs *will* be interrupted.
+
+### In a container
+
+```bash
+docker compose up --build
+```
+
+The databases are mounted rather than copied — Mini-Dev alone is about 1.5 GB,
+which has no business inside an image that is otherwise a few hundred
+megabytes. The mount is read-only, so a bug in the connection layer still
+cannot write to them, and the response cache lives on its own writable volume
+because of that. The API key comes from the environment and is never built
+into the image.
+
+**Not verified.** Docker was not available on the machine this was developed
+on, so the image has never been built. The commands it runs are the same ones
+used locally, but treat this as untested until it is.
 
 ## Limitations
 

@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # Databases are large, so allow pointing at an external drive.
     databases_dir: Path | None = None
 
+    # The response cache has to live somewhere writable, which the data
+    # directory is not when databases are mounted read-only.
+    cache_dir: Path | None = None
+
     # Number of distinct values fetched when profiling a column.
     sample_values_limit: int = 20
 
@@ -47,7 +51,7 @@ class Settings(BaseSettings):
 
     @property
     def response_cache(self) -> Path:
-        return self.data_dir / "responses.sqlite"
+        return (self.cache_dir or self.data_dir) / "responses.sqlite"
 
 
 settings = Settings()
