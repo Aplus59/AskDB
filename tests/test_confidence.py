@@ -32,7 +32,7 @@ def test_an_unresolved_concern_lowers_confidence() -> None:
 
 
 def test_vocabulary_coverage_no_longer_affects_confidence() -> None:
-    # Measured over 454 questions it fired on a quarter of them and returned
+    # Measured over 498 questions it fired on a quarter of them and returned
     # the base error rate, so it is recorded but not scored.
     verdict = assess("what was the rainfall and humidity during the thunderstorm")
 

@@ -7,20 +7,20 @@ clarification, or decline.
 The confidence score is assembled from signals the agent already produced, so
 abstention costs no extra model call. Because it depends only on recorded
 values, the whole threshold sweep replays offline from a finished run in
-milliseconds — the expensive part (answering 456 questions) happens once, and
+milliseconds — the expensive part (answering 500 questions) happens once, and
 the cheap part (deciding whether to stand behind each answer) replays as often
 as needed.
 
 ## Which signals actually predict a wrong answer
 
-Three were tried. Measured over 454 answered questions with a base error rate
-of **0.359**:
+Three were tried. Measured over 498 scorable questions with a base error rate
+of **0.367**:
 
 | Signal | Fires on | Error rate when it fires | Lift |
 |--------|---------:|-------------------------:|-----:|
-| Unresolved self-check concern | 35 | 0.657 | **1.83×** |
-| Low vocabulary coverage | 119 | 0.378 | 1.05× |
-| Query needed a repair | 10 | 0.300 | **0.84×** |
+| Unresolved self-check concern | 36 | 0.667 | **1.81×** |
+| Low vocabulary coverage | 126 | 0.397 | 1.08× |
+| Query needed a repair | 10 | 0.300 | **0.82×** |
 
 **Only the first predicts anything.**
 
@@ -41,16 +41,20 @@ Both were removed.
 
 | | Three signals | One signal |
 |---|---:|---:|
-| Coverage | 0.678 | **0.919** |
-| Accuracy when answered | 0.676 | 0.666 |
-| Silent error rate | 0.219 | 0.307 |
-| **Abstention precision** | 0.442 | **0.676** |
+| Coverage | 0.684 | **0.924** |
+| Accuracy when answered | 0.667 | 0.656 |
+| Silent error rate | 0.228 | 0.318 |
+| **Abstention precision** | 0.449 | **0.684** |
+
+Both columns are recomputed from the same finished run with the same
+accounting, the three-signal one at the threshold where any single signal is
+enough to decline — which is how it was originally configured.
 
 The three-signal version looked better on the headline: it cut silent errors
-from 35.7% to 21.9%. But it declined **a third of every question asked**, and of
-those it declined only 44% would actually have been wrong — barely above the
-36% base rate. It was withholding roughly eighty correct answers to suppress
-sixty wrong ones.
+from 36.6% to 22.8%. But it declined **a third of every question asked**, and of
+those it declined only 45% would actually have been wrong — barely above the
+37% base rate. It was withholding roughly eighty-seven correct answers to
+suppress seventy-one wrong ones.
 
 The one-signal version declines 8% of questions and is right about two-thirds
 of them. It catches fewer wrong answers in absolute terms and wastes far less.
@@ -59,9 +63,9 @@ of them. It catches fewer wrong answers in absolute terms and wastes far less.
 
 ```
  clarify<  coverage   acc|ans  silent err  abst prec  answered
-     0.00     0.996     0.641       0.357      1.000   454/456
-     0.70     0.919     0.666       0.307      0.676   419/456
-     1.01     0.000     0.000       0.000      0.362     0/456
+     0.00     0.996     0.633       0.366      1.000   498/500
+     0.70     0.924     0.656       0.318      0.684   462/500
+     1.01     0.000     0.000       0.000      0.370     0/500
 ```
 
 *Silent error rate* is the share of all questions answered confidently and
@@ -81,7 +85,7 @@ boundary was never tested.
 
 ## Honest status
 
-One signal, firing on 7.7% of questions, with a lift of 1.83×. That is a real
+One signal, firing on 7.2% of questions, with a lift of 1.81×. That is a real
 effect and a small one: it removes about a seventh of the silent errors.
 
 Vocabulary coverage is still computed and stored on every result, just not

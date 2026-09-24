@@ -9,12 +9,12 @@ abstention costs no extra model call. That matters: a system that spends a
 call deciding whether to spend a call has doubled its cost before answering
 anything.
 
-Three signals were tried. Measured over 454 answered questions against a base
-error rate of 0.359:
+Three signals were tried. Measured over 498 scorable questions against a base
+error rate of 0.367:
 
-    unresolved concern   fires on  35   error rate 0.657   lift 1.83x
-    low vocab coverage   fires on 119   error rate 0.378   lift 1.05x
-    needed a repair      fires on  10   error rate 0.300   lift 0.84x
+    unresolved concern   fires on  36   error rate 0.667   lift 1.81x
+    low vocab coverage   fires on 126   error rate 0.397   lift 1.08x
+    needed a repair      fires on  10   error rate 0.300   lift 0.82x
 
 Only the first predicts anything. Vocabulary coverage fires on a quarter of
 all questions and returns the base rate with noise. The repair penalty points

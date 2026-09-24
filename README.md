@@ -10,27 +10,33 @@ can decline to answer.
 
 | | |
 |---|---|
-| **Execution accuracy** | **0.641** |
-| Strict (multiset) comparison | 0.597 |
-| Questions scored | 454 (10 of 11 databases) |
-| Tokens per question | 944 |
-| Cost | ~$0.48 per 1,000 questions |
+| **Execution accuracy** | **0.633** |
+| Strict (multiset) comparison | 0.586 |
+| Questions scored | 498 of 500 (all 11 databases) |
+| Tokens per question | 898 |
+| Cost | ~$0.46 per 1,000 questions |
 
-Measured on BIRD Mini-Dev with `gemini-3.5-flash-lite`. The eleventh database
-never ran: the free tier allows 20 requests per day per model and the quota ran
-out. Every claim below links to the run that produced it, and where a result
-was inconclusive it says so.
+Measured on BIRD Mini-Dev with `gemini-3.5-flash-lite`, over the full 500
+questions. Two reference queries time out after thirty seconds and are excluded
+from scoring, leaving 498. Every claim below links to the run that produced it,
+and where a result was inconclusive it says so.
+
+The cost line carries an assumption. Token counts are complete for all 500
+questions, but 420 of them were answered before the run began recording *which*
+model served each one, so those are priced as `gemini-3.5-flash-lite` — which is
+what 75 of the 80 questions that did record a model actually used. The cost
+tool prints that assumption on its own line rather than burying it.
 
 ## What I built, measured, and removed
 
 Three improvements were added on top of the basic loop. Each was measured
-against it. **None of them survived**, and that is the most useful thing in
-this repository.
+against it. **Two were removed**, and the measurements that killed them are the
+most useful thing in this repository.
 
 | Change | Cost | Result | Kept |
 |---|---|---|:--:|
 | Example column values in the schema | +61% tokens | +2.8 points, McNemar p = 0.51 | ✗ |
-| Re-checking suspicious results | ~free | fires on 7.7%, the only signal with real lift | ✓ |
+| Re-checking suspicious results | ~free | fires on 7.2%, the only signal with real lift | ✓ |
 | 3-sample self-consistency voting | +177% tokens | 0 fixed, 2 broken | ✗ |
 
 Details in [docs/agent-experiments.md](docs/agent-experiments.md).
@@ -49,9 +55,9 @@ execute it, and repair from the database's own error message.
 The model writes SQL. That is all it does.
 
 Everything else is ordinary code: schema retrieval is BM25 over table
-descriptions, result comparison is set arithmetic, the confidence score is
-four numbers added together, and the abstention thresholds are swept offline.
-None of it calls a model, so none of it costs anything or varies between runs.
+descriptions, result comparison is set arithmetic, the confidence score is one
+subtraction, and the abstention thresholds are swept offline. None of it calls
+a model, so none of it costs anything or varies between runs.
 
 That boundary is deliberate. A system that routes every decision through a
 language model is slower, more expensive and less predictable than one that
@@ -107,16 +113,16 @@ is therefore not evidence on its own.
 Failures are read and labelled: genuine model error, answer-shape mismatch,
 ambiguous question, benchmark annotation error, or unanswerable.
 
-Of the first 11 failures classified, **only 2 were genuine reasoning errors**:
+Of the 15 failures classified so far, **only 3 were genuine reasoning errors**:
 
 | Category | Count |
 |---|---:|
-| format_mismatch — right data, different shape | 6 |
-| model_error | 2 |
-| ambiguous question | 2 |
-| annotation_error — the reference is wrong | 1 |
+| format_mismatch — right data, different shape | 7 |
+| model_error | 3 |
+| ambiguous question | 3 |
+| annotation_error — the reference is wrong | 2 |
 
-`california_schools` scores worst of all ten databases at 0.367, and this is
+`california_schools` scores worst of all eleven databases at 0.367, and this is
 why: **the same concept exists under three names across three tables.** School
 name is `schools.School`, `frpm."School Name"` and `satscores.sname`. The model
 picks a semantically correct column that is not the one the reference happened
@@ -126,9 +132,10 @@ Other examples: `RANK()` against `DENSE_RANK()` where the question never says
 how ties break; `'well-finished'` against `'Yes'` for identical `CASE` logic;
 the right month returned as `201307` instead of `07`.
 
-Eleven of 165 failures are labelled, so treat the proportions as a direction
-rather than a measurement. Two of the 500 reference queries also time out after
-thirty seconds and are excluded from scoring entirely.
+Fifteen of 185 failures are labelled, so treat the proportions as a direction
+rather than a measurement — on the labelled subset the corrected accuracy is
+0.633 and 0.644 counting shape mismatches as right, but that is 15 judgements,
+not 185.
 
 ```bash
 python scripts/audit_failures.py --results data/runs/main.jsonl --list
@@ -149,13 +156,13 @@ python scripts/sweep_abstention.py --results data/runs/main.jsonl
 
 ### Three signals were tried; two were removed
 
-Measured over 454 answered questions against a base error rate of 0.359:
+Measured over 498 scorable questions against a base error rate of 0.367:
 
 | Signal | Fires on | Error rate when it fires | Lift |
 |---|---:|---:|---:|
-| Unresolved self-check concern | 35 | 0.657 | **1.83×** |
-| Low vocabulary coverage | 119 | 0.378 | 1.05× |
-| Query needed a repair | 10 | 0.300 | **0.84×** |
+| Unresolved self-check concern | 36 | 0.667 | **1.81×** |
+| Low vocabulary coverage | 126 | 0.397 | 1.08× |
+| Query needed a repair | 10 | 0.300 | **0.82×** |
 
 Vocabulary coverage fires on a quarter of all questions and returns the base
 rate with noise. The repair penalty points the **wrong way** — a repaired query
@@ -167,8 +174,8 @@ Dropping both improved the system on every axis that matters:
 
 | | Three signals | One signal |
 |---|---:|---:|
-| Coverage | 0.678 | **0.919** |
-| Abstention precision | 0.442 | **0.676** |
+| Coverage | 0.684 | **0.924** |
+| Abstention precision | 0.449 | **0.684** |
 
 The old configuration declined a third of all questions and was right about
 those barely better than chance. What is left is precise and rare, which is a
@@ -208,8 +215,9 @@ uvicorn askdb.api.app:create_app --factory      # the HTTP service
 ```
 
 Evaluation runs append to disk as they go and resume where they stopped. That
-is not defensive programming: the free tier allows 20 requests per day per
-model, so long runs *will* be interrupted.
+is not defensive programming: the free tier's daily quota ran out partway
+through this run more than once, and the 500 questions were finished across
+several days by re-running the same command.
 
 ### In a container
 

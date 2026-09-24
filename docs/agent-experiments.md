@@ -53,12 +53,18 @@ The self-check fired on 1 question in 57. At that rate it cannot move the
 score in either direction, and these runs say nothing about whether its
 judgement is good — only that it is rare.
 
+The full 500-question run since settled that: it fires on 7.2% of questions,
+and when it fires the answer is wrong 66.7% of the time against a base rate of
+36.7%. See [abstention.md](abstention.md).
+
 ## Decision
 
 **Value grounding is off by default.** The cost is certain and the benefit is
 not demonstrated. The flag remains so the experiment can be re-run on all 500
 questions, where an effect of this size would become measurable — roughly five
-times the current sample is needed to resolve a 3-point difference.
+times the current sample is needed to resolve a 3-point difference. That re-run
+has not been done: the 500-question run reported in the README is the default
+configuration, with grounding off.
 
 **The self-check stays on.** Its cost when it does not fire is a few
 microseconds of Python, and it only spends a model call on results that are
@@ -79,10 +85,14 @@ there.
 ## Reproducing
 
 ```bash
-python scripts/evaluate_agent.py --limit 110 --output data/runs/full_110.jsonl
-python scripts/evaluate_agent.py --limit 110 --no-value-grounding --no-self-check \
+python scripts/evaluate_agent.py --limit 110 --value-grounding \
+    --output data/runs/full_110.jsonl
+python scripts/evaluate_agent.py --limit 110 --no-self-check \
     --output data/runs/base_110.jsonl
 ```
+
+Value grounding is off by default and the self-check is on, so the treatment
+run opts into grounding and the baseline run opts out of the self-check.
 
 Runs resume: re-running with the same output file skips questions already
 answered.
